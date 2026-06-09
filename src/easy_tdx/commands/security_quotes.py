@@ -100,8 +100,8 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
             s_vol, pos = get_price(body, pos)
             b_vol, pos = get_price(body, pos)
 
-            unknown_2, pos = get_price(body, pos)
-            unknown_3, pos = get_price(body, pos)
+            unknown_2, pos = get_price(body, pos)  # IndexOpenAmount(指数)/舍入残差(个股)
+            unknown_3, pos = get_price(body, pos)  # StockOpenAmount(个股)/负值(指数)
 
             # 五档买盘
             bid1_d, pos = get_price(body, pos)
@@ -129,8 +129,8 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
             bv5, pos = get_price(body, pos)
             av5, pos = get_price(body, pos)
 
-            # 尾部：2字节 H + 4个 get_price + 2字节 h + 2字节 H
-            (unknown_4,) = unpack_from("<H", body, pos, "security_quotes tail flag")
+            # 尾部：2字节 H（交易状态标志，0x8020=停牌）+ 4个 get_price + 2字节 h + 2字节 H
+            (trading_status,) = unpack_from("<H", body, pos, "security_quotes tail flag")
             pos += 2
             unknown_5, pos = get_price(body, pos)
             unknown_6, pos = get_price(body, pos)
@@ -196,6 +196,8 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
                     unknown_7=unknown_7,
                     unknown_8=unknown_8,
                     server_time=_format_server_time(unknown_0),
+                    trading_status=trading_status,
+                    open_amount=unknown_3 * 100.0,
                     _raw=body[record_start:pos],
                 )
             )

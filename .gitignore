@@ -13,3 +13,4 @@ venv/
 .omc/
 uv.lock
 docs/_build/
+FK/

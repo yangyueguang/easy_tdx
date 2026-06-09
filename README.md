@@ -39,6 +39,8 @@ easy-tdx 要做的事很简单：**把机构的数据锁砸开，扔到每个普
 随便用，随便改，随便分发。  
 **数据面前，人人平等。**
 
+📖 **详细用法请查看 [GitHub Wiki](https://github.com/handsomejustin/easy_tdx/wiki)**
+
 ## 安装
 
 ```bash

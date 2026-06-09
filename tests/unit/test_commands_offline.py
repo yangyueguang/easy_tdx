@@ -158,6 +158,11 @@ def test_security_quotes_parse():
     assert q.unknown_2 == -1
     assert q.unknown_3 == 22694
 
+    # confirmed semantic fields
+    assert isinstance(q.trading_status, int)
+    assert isinstance(q.open_amount, float)
+    assert q.open_amount == 22694 * 100.0
+
 
 # ---------------------------------------------------------------------------
 # minute_time

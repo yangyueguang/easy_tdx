@@ -321,4 +321,14 @@ def BIAS_SIGNAL(CLOSE, P=10, M=30):   #乖离率信号指标：M日乖离 + 短/
     X_LMA = MA(X, M)                                      #长周期信号线 MA(X,M)
     return RD(X), RD(S_SMA), RD(X_LMA)
 
+def FK(CLOSE):                                      #FK趋势指标：快线EMA(2)与斜率外推慢线EMA(42)比较
+    fast = EMA(CLOSE, 2)
+    slow = EMA(SLOPE(CLOSE, 21) * 20 + CLOSE, 42)
+    return fast > slow
+
+def OUTPERFORM_20D(CLOSE, INDEX_CLOSE):              #20日相对强度：个股涨幅跑赢大盘返回1，否则返回0
+    stock_ret = (CLOSE - REF(CLOSE, 20)) / REF(CLOSE, 20)
+    index_ret = (INDEX_CLOSE - REF(INDEX_CLOSE, 20)) / REF(INDEX_CLOSE, 20)
+    return IF(stock_ret > index_ret, 1, 0)
+
   #望大家能提交更多指标和函数  https://github.com/mpquant/MyTT
