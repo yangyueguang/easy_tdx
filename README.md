@@ -160,6 +160,10 @@ easy-tdx indicator RSI -m SZ -c 000001 --no-ohlcv
 easy-tdx chanlun SZ 000001 --table
 easy-tdx chanlun SH 600519 --adjust QFQ --table
 easy-tdx chanlun SZ 000001 --period 30MIN
+
+# 多级别联立：分析日线最后一笔在 30 分钟级别中的走势结构
+easy-tdx chanlun SZ 000001 --multi-level 30MIN --table
+easy-tdx chanlun SH 600519 --multi-level 5MIN
 ```
 
 #### 输出示例
@@ -276,6 +280,9 @@ easy-tdx chanlun SZ 000001 --period 30MIN
 ```bash
 easy-tdx backtest SZ 300308 --strategy-file strategies/expma_cross.py --count 2000 --cash 1000000 --adjust QFQ --table
 # 推荐加上 --slippage 0.01 模拟真实滑点（元/股），使回测更贴近实盘
+
+# 缠论自动桥接：引擎自动计算缠论分析并注入策略 self.chanlun
+easy-tdx backtest SZ 000001 --strategy-file strategies/chanlun_strategy.py --chanlun-level DAILY --table
 ```
 
 输出示例：
@@ -363,6 +370,45 @@ for r in results[:5]:
 | `OR` | 任一因子看多 | 任一因子看空 | 激进，信号多噪声大 |
 
 `--show` 会用 matplotlib 弹出一个双轴对比窗口：左轴蓝色线是归一化股价，右轴红色线是最佳策略的资金曲线，绿三角=买入、黄三角=卖出，标题显示股票名称和关键绩效指标。需要 `pip install matplotlib`。
+
+**多标的组合回测（portfolio）：**
+
+`easy-tdx portfolio` 对多只股票同时回测，共享资金池，按均等比例分配，汇总组合整体绩效：
+
+```bash
+# 两只股票组合回测
+easy-tdx portfolio --stocks SZ:000001,SH:600519 --strategy-file strategies/ma_cross.py --table
+
+# 自定义资金和周期
+easy-tdx portfolio --stocks SZ:000001,SH:600519,SH:600036 \
+  --strategy-file strategies/expma_cross.py --cash 500000 --period DAILY --count 1000 --table
+
+# 搭配缠论桥接
+easy-tdx portfolio --stocks SZ:000001,SH:600519 \
+  --strategy-file strategies/chanlun_strategy.py --chanlun-level DAILY --table
+```
+
+输出示例：
+
+```
+=== 组合回测绩效概要 ===
+标的数量: 3
+总资金: 200,000
+组合收益率: 28.50%
+组合年化: 28.50%
+
+── 各标的详情 ──
+  SZ000001: 收益=35.20% 夏普=0.92 回撤=15.30% 分配=33% 交易=12
+  SH600519: 收益=18.40% 夏普=0.68 回撤=8.50%  分配=33% 交易=8
+  SH600036: 收益=31.90% 夏普=0.85 回撤=12.10% 分配=33% 交易=15
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--stocks` | 股票列表：逗号分隔的 `市场:代码`（如 `SZ:000001,SH:600519`） |
+| `--cash` | 总资金（默认 20 万） |
+| `--allocation` | 资金分配方式（目前支持 `equal` 均等分配） |
+| `--chanlun-level` | 自动计算缠论分析并注入策略（如 DAILY/30MIN） |
 
 输出示例（以 SZ 300308 为例）：
 
@@ -496,6 +542,12 @@ easy-tdx screen scan --strategy strategies/macd_cross.py --universe sz --output 
 
 # 从自定义股票列表扫描
 easy-tdx screen scan --strategy strategies/bollinger_breakout.py --universe my_stocks.txt --output signals.json
+
+# 并发扫描（推荐 4-8 进程，速度提升 4-8 倍）
+easy-tdx screen scan --strategy strategies/rsi_reversal.py --workers 4 --output signals.json
+
+# 增量扫描（缓存未修改的 .day 文件，跳过重复计算）
+easy-tdx screen scan --strategy strategies/rsi_reversal.py --cache scan_cache.json --output signals.json
 ```
 
 输出示例（JSON）：
@@ -543,6 +595,8 @@ easy-tdx screen rank --from signals.json --sort sharpe --top 10 --table --names
 |------|------|
 | `--universe` | `all`（默认，沪深全 A）/ `sh` / `sz` / 文件路径（每行 "市场 代码"） |
 | `--vipdoc` | 离线数据目录（默认自动检测通达信安装路径） |
+| `--workers` | 并发进程数：`0` 串行（默认）/ `2+` ProcessPoolExecutor 并发（推荐 4-8） |
+| `--cache` | 增量扫描缓存文件路径（JSON，mtime 未变的文件自动跳过） |
 | `--sort` | 排序指标：`sharpe`（默认）/ `total_return` / `max_drawdown` / `win_rate` 等 |
 | `--sort-reverse` | 升序（用于回撤等越小越好的指标） |
 | `--names` | 在线补齐股票名称（默认关闭，只查排名中的几十只） |
@@ -700,6 +754,7 @@ easy-tdx offline sync-all
 | `indicator` | 技术指标计算（32 个：MACD/KDJ/RSI/BOLL/DMI/ATR...） |
 | `indicator-list` | 列出可用技术指标 |
 | `backtest` | 回测引擎（加载策略文件，输出绩效报告） |
+| `portfolio` | 多标的组合回测（共享资金池，均等分配，汇总绩效） |
 | `run-all` | 批量运行所有策略并排名（绩效排名 + 综合评分 + 可选图表） |
 | `screen scan` | 策略选股扫描（纯离线，全市场信号扫描） |
 | `screen rank` | 扫描结果回测排名（按夏普/回撤等指标排序） |
@@ -1252,6 +1307,17 @@ ruff format --check src/ tests/                              # format check
 详见 [NOTICE](NOTICE) 和 [LICENSE](LICENSE)。
 
 ## Changelog
+
+### 1.9.7 (2026-06-11)
+
+**CLI 全量集成** — v1.9.6 新增的 6 项功能全部暴露到 CLI，修复缠论多级别联立的 client 生命周期 bug。
+
+- **`screen scan` 并发扫描**：新增 `--workers N` 参数，ProcessPoolExecutor 并行处理，推荐 4-8 进程，扫描速度提升 4-8 倍
+- **`screen scan` 增量缓存**：新增 `--cache PATH` 参数，mtime 检测未修改的 `.day` 文件自动跳过
+- **`backtest` 缠论桥接**：新增 `--chanlun-level LEVEL` 参数，引擎自动计算缠论分析并注入策略 `self.chanlun`
+- **`portfolio` 组合回测**：新增 `easy-tdx portfolio` 命令，多标的共享资金池、均等分配、汇总绩效
+- **`chanlun` 多级别联立**：新增 `--multi-level PERIOD` 参数，分析高级别最后一笔在低级别中的趋势方向、笔重叠、背驰条件
+- **Bug 修复**：`cmd_chanlun.py` 中 `_run_multi_level` 在 `with` 块外使用 `client`，导致已关闭连接报错
 
 ### 1.9.6 (2026-06-11)
 

@@ -39,6 +39,12 @@ import click
 @click.option("--adjust", default="NONE", help="复权: NONE/QFQ/HFQ")
 @click.option("--count", default=500, type=int, help="K线数量")
 @click.option("--indicators", default=None, help="预计算指标（逗号分隔）")
+@click.option(
+    "--chanlun-level",
+    "chanlun_level",
+    default=None,
+    help="自动计算缠论分析并注入策略（如 DAILY/30MIN）",
+)
 @click.option("--table", "use_table", is_flag=True, help="表格输出")
 @click.option("--output", "output_fmt", type=click.Choice(["json", "table", "csv"]), default="json")
 def backtest(
@@ -55,6 +61,7 @@ def backtest(
     adjust: str,
     count: int,
     indicators: str | None,
+    chanlun_level: str | None,
     use_table: bool,
     output_fmt: str,
 ) -> None:
@@ -67,6 +74,8 @@ def backtest(
       easy-tdx backtest SH 600519 --strategy-file ma_cross.py --table
 
       easy-tdx backtest SZ 000001 --strategy-file my_strategy.py --indicators MACD,KDJ
+
+      easy-tdx backtest SZ 000001 --strategy-file chanlun_strategy.py --chanlun-level DAILY
 
       easy-tdx backtest SZ 000001 \
         --combo-strategies strategies/macd_cross.py,strategies/rsi_reversal.py \
@@ -128,6 +137,7 @@ def backtest(
             cash=cash,
             commission=commission,
             execution=execution,
+            chanlun_level=chanlun_level,
         )
         result = engine.run(df)
 
@@ -250,6 +260,8 @@ def _print_table(result: Any) -> None:
     click.echo(f"初始资金: {config.get('cash', 0):.2f}")
     click.echo(f"佣金率: {config.get('commission', 0):.4f}")
     click.echo(f"成交规则: {config.get('execution', 'next_open')}")
+    if config.get("chanlun_level"):
+        click.echo(f"缠论级别: {config.get('chanlun_level')}")
     click.echo()
 
     if config.get("future_leak_warning"):
@@ -269,3 +281,152 @@ def _print_table(result: Any) -> None:
             )
     else:
         click.echo("无交易记录")
+
+
+# ── portfolio 多标的组合回测命令 ─────────────────────────────────────────────
+
+
+@click.command()
+@click.option(
+    "--stocks",
+    required=True,
+    help="股票列表：逗号分隔的 市场:代码（如 SZ:000001,SH:600519,SH:600036）",
+)
+@click.option("--strategy-file", "strategy_file", required=True, help="Python 策略文件路径")
+@click.option("--cash", default=200_000.0, type=float, help="总资金（默认 20 万）")
+@click.option("--commission", default=0.0003, type=float, help="佣金率")
+@click.option(
+    "--execution",
+    default="next_open",
+    type=click.Choice(["next_open", "next_close", "this_close", "worst", "best"]),
+    help="成交价规则",
+)
+@click.option("--period", default="DAILY", help="K线周期")
+@click.option("--adjust", default="NONE", help="复权: NONE/QFQ/HFQ")
+@click.option("--count", default=500, type=int, help="K线数量")
+@click.option(
+    "--allocation",
+    default="equal",
+    type=click.Choice(["equal"], case_sensitive=False),
+    help="资金分配方式（默认 equal 均等分配）",
+)
+@click.option(
+    "--chanlun-level",
+    "chanlun_level",
+    default=None,
+    help="自动计算缠论分析并注入策略（如 DAILY/30MIN）",
+)
+@click.option("--table", "use_table", is_flag=True, help="表格输出")
+@click.option("--output", "output_fmt", type=click.Choice(["json", "table", "csv"]), default="json")
+def portfolio(
+    stocks: str,
+    strategy_file: str,
+    cash: float,
+    commission: float,
+    execution: str,
+    period: str,
+    adjust: str,
+    count: int,
+    allocation: str,
+    chanlun_level: str | None,
+    use_table: bool,
+    output_fmt: str,
+) -> None:
+    """多标的组合回测：共享资金池，独立产生信号，统一管理仓位。
+
+    对多只股票同时回测，按均等比例分配资金，汇总组合整体绩效。
+
+    示例：
+
+      easy-tdx portfolio --stocks SZ:000001,SH:600519 --strategy-file ma_cross.py
+
+      easy-tdx portfolio --stocks SZ:000001,SH:600519,SH:600036 \\
+        --strategy-file my_strategy.py --cash 500000 --table
+
+      easy-tdx portfolio --stocks SZ:000001,SH:600519 \\
+        --strategy-file chanlun_strat.py --chanlun-level DAILY
+    """
+    import json
+
+    from ..cli.conn import get_mac_client
+    from ..cli.parsers import parse_adjust, parse_market, parse_period
+    from .portfolio_engine import PortfolioBacktestEngine, StockData
+
+    # 1. 加载策略
+    strategy_cls = _load_strategy_from_file(strategy_file)
+    strategy_name = strategy_cls.__name__
+
+    # 2. 解析股票列表
+    stock_list = []
+    for item in stocks.split(","):
+        item = item.strip()
+        if ":" not in item:
+            click.echo(f"错误: 股票格式应为 市场:代码，如 SZ:000001，收到: {item}", err=True)
+            raise SystemExit(1)
+        mkt_str, code = item.split(":", 1)
+        stock_list.append((mkt_str.strip().upper(), code.strip()))
+
+    if not stock_list:
+        click.echo("错误: 未指定股票", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"策略: {strategy_name} | 标的: {len(stock_list)} 只 | 资金: {cash:,.0f}", err=True)
+
+    # 3. 获取数据
+    stock_data_list: list[StockData] = []
+    with get_mac_client() as client:
+        for mkt_str, code in stock_list:
+            mkt = parse_market(mkt_str)
+            df = client.get_stock_kline(
+                mkt,
+                code,
+                period=parse_period(period),
+                start=0,
+                count=count,
+                adjust=parse_adjust(adjust),
+            )
+            stock_data_list.append(StockData(code=code, market=mkt_str, df=df))
+
+    # 4. 创建引擎并运行
+    engine = PortfolioBacktestEngine(
+        strategy_cls=strategy_cls,
+        stocks=stock_data_list,
+        total_cash=cash,
+        allocation=allocation,
+        commission=commission,
+        execution=execution,
+        chanlun_level=chanlun_level,
+    )
+    result = engine.run()
+
+    # 5. 输出结果
+    fmt = "table" if use_table else output_fmt
+    if fmt == "table":
+        _print_portfolio_table(result)
+    else:
+        click.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+
+
+def _print_portfolio_table(result: Any) -> None:
+    """以表格形式输出组合回测结果。"""
+    perf = result.total_performance
+
+    click.echo("=== 组合回测绩效概要 ===")
+    click.echo(f"标的数量: {perf.get('total_stocks', 0)}")
+    click.echo(f"总资金: {perf.get('total_cash', 0):,.0f}")
+    click.echo(f"组合收益率: {perf.get('total_return', 0):.2%}")
+    click.echo(f"组合年化: {perf.get('annual_return', 0):.2%}")
+    click.echo()
+
+    click.echo("── 各标的详情 ──")
+    for key, stock_result in result.individual_results.items():
+        sp = stock_result.performance
+        alloc = result.equity_allocation.get(key, 0)
+        click.echo(
+            f"  {key}: 收益={sp.get('total_return', 0):.2%} "
+            f"夏普={sp.get('sharpe', 0):.2f} "
+            f"回撤={sp.get('max_drawdown', 0):.2%} "
+            f"分配={alloc:.0%} "
+            f"交易={sp.get('total_trades', 0)}"
+        )
+    click.echo()

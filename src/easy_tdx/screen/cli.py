@@ -38,6 +38,13 @@ def screen() -> None:
 @click.option("--vipdoc", default=None, help="离线数据目录（默认自动检测）")
 @click.option("--cash", default=100_000.0, type=float, help="初始资金")
 @click.option("--commission", default=0.0003, type=float, help="佣金率")
+@click.option(
+    "--workers",
+    default=0,
+    type=int,
+    help="并发工作进程数: 0=串行（默认），2+=ProcessPoolExecutor 并发（推荐 4-8）",
+)
+@click.option("--cache", "cache_file", default=None, help="增量扫描缓存文件路径（JSON）")
 def scan(
     strategy_file: str,
     output_file: str | None,
@@ -45,10 +52,12 @@ def scan(
     vipdoc: str | None,
     cash: float,
     commission: float,
+    workers: int,
+    cache_file: str | None,
 ) -> None:
     """纯离线扫描全市场，找出触发买入信号的股票。
 
-    读取本地通达信 .day 文件，零网络 IO，全市场约 30-60 秒。
+    读取本地通达信 .day 文件，零网络 IO，串行约 30-60 秒，并发可提速 4-8 倍。
 
     示例：
 
@@ -56,13 +65,21 @@ def scan(
 
       easy-tdx screen scan --strategy strategies/rsi_reversal.py --output signals.json
 
-      easy-tdx screen scan --strategy strategies/rsi_reversal.py --universe sz
+      easy-tdx screen scan --strategy strategies/rsi_reversal.py --universe sz --workers 4
+
+      easy-tdx screen scan --strategy strategies/rsi_reversal.py --cache scan_cache.json
     """
 
     strategy_cls = _load_strategy(strategy_file)
     strategy_name = strategy_cls.__name__
     click.echo(f"策略: {strategy_name}", err=True)
     click.echo(f"范围: {universe}", err=True)
+    if workers > 0:
+        click.echo(f"并发: {workers} 进程", err=True)
+    if workers > 0 and cache_file:
+        click.echo("注意: 并发模式暂不支持增量缓存，--cache 参数将被忽略", err=True)
+    if cache_file:
+        click.echo(f"缓存: {cache_file}", err=True)
 
     from .scanner import SignalScanner
 
@@ -71,6 +88,7 @@ def scan(
         vipdoc_path=vipdoc,
         cash=cash,
         commission=commission,
+        cache_file=cache_file,
     )
 
     # 进度回调（输出到 stderr，避免污染 stdout 的 JSON）
@@ -85,7 +103,7 @@ def scan(
             pct = current * 100 // total if total > 0 else 0
             click.echo(f"\r[{current}/{total}] {pct}% scanning {name}", nl=False, err=True)
 
-    results = scanner.scan(universe=universe, progress_callback=on_progress)
+    results = scanner.scan(universe=universe, progress_callback=on_progress, workers=workers)
 
     # 生成 JSON
     json_str = scanner.to_json(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..backtest.cli import backtest
+from ..backtest.cli import backtest, portfolio
 from ..screen.cli import screen
 from .cmd_admin import ping, version
 from .cmd_auction import auction
@@ -73,5 +73,6 @@ cli.add_command(indicator_list)
 cli.add_command(offline)
 cli.add_command(chanlun)
 cli.add_command(backtest)
+cli.add_command(portfolio)
 cli.add_command(run_all)
 cli.add_command(screen)
