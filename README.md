@@ -275,6 +275,7 @@ easy-tdx chanlun SZ 000001 --period 30MIN
 
 ```bash
 easy-tdx backtest SZ 300308 --strategy-file strategies/expma_cross.py --count 2000 --cash 1000000 --adjust QFQ --table
+# 推荐加上 --slippage 0.01 模拟真实滑点（元/股），使回测更贴近实盘
 ```
 
 输出示例：
@@ -288,6 +289,10 @@ easy-tdx backtest SZ 300308 --strategy-file strategies/expma_cross.py --count 20
 胜率: 20.8%
 交易次数: 24
 ```
+
+> ⚠️ **回测 ≠ 实盘**。以上收益率为历史数据回测结果，包含幸存者偏差和过拟合风险，
+> 不构成投资建议。实际交易需考虑滑点、流动性、涨跌停无法成交等因素。
+> 请在充分理解策略逻辑后谨慎使用。
 
 **全策略批量对比（CLI）：**
 
@@ -1431,3 +1436,8 @@ ruff format --check src/ tests/                              # format check
 - 首个正式版本
 - TdxClient / AsyncTdxClient 标准协议客户端
 - K 线、实时报价、分时、逐笔成交、财务数据
+
+## 免责声明
+
+本工具仅供学习和技术研究使用，不构成任何投资建议。使用者应自行承担投资决策的全部风险。
+作者不对因使用本工具导致的任何直接或间接损失负责。
