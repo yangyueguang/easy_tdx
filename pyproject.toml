@@ -29,8 +29,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "easy_tdx.MyTT"
-disallow_untyped_defs = false
-disallow_untyped_calls = false
+# Type stubs provided via MyTT.pyi — keep strict checks enabled
 
 [tool.ruff]
 target-version = "py310"
