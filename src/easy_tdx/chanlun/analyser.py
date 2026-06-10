@@ -34,15 +34,16 @@ def _df_to_klines(df: pd.DataFrame) -> list[Kline]:
         dt = getattr(row, "datetime", None) or getattr(row, "date", None)
         if dt is None:
             continue
+        row_any: Any = row  # avoid pandas-stubs vs bare pandas type mismatch
         vol = getattr(row, "vol", 0.0) or 0.0
         klines.append(
             Kline(
                 index=i,
                 date=dt,
-                open=float(row.open),  # type: ignore[arg-type]
-                close=float(row.close),  # type: ignore[arg-type]
-                high=float(row.high),  # type: ignore[arg-type]
-                low=float(row.low),  # type: ignore[arg-type]
+                open=float(row_any.open),
+                close=float(row_any.close),
+                high=float(row_any.high),
+                low=float(row_any.low),
                 amount=float(vol),
             )
         )
