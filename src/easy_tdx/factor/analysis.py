@@ -1,5 +1,6 @@
 # src/easy_tdx/factor/analysis.py
 """因子有效性分析引擎。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -64,7 +65,7 @@ class FactorAnalyzer:
     def compute_quantile_returns(self) -> pd.DataFrame:
         """分层收益分析。"""
         dates = sorted(self._merged["date"].unique())
-        q_names = [f"q{i+1}" for i in range(self._n_quantiles)]
+        q_names = [f"q{i + 1}" for i in range(self._n_quantiles)]
         rows: list[list[float]] = []
         for date in dates:
             sub = self._merged[self._merged["date"] == date]
@@ -74,7 +75,10 @@ class FactorAnalyzer:
                 continue
             valid = valid.copy()
             valid["_q"] = pd.qcut(
-                valid[self._factor_col], self._n_quantiles, labels=False, duplicates="drop",
+                valid[self._factor_col],
+                self._n_quantiles,
+                labels=False,
+                duplicates="drop",
             )
             means = valid.groupby("_q")[self._return_col].mean()
             rows.append([float(means.get(q, np.nan)) for q in range(self._n_quantiles)])
@@ -125,7 +129,7 @@ class FactorAnalyzer:
 
         quantile_means = qr.mean()
         quantile_returns = {
-            f"q{i+1}": float(quantile_means.iloc[i]) for i in range(len(quantile_means))
+            f"q{i + 1}": float(quantile_means.iloc[i]) for i in range(len(quantile_means))
         }
         top_minus_bottom = quantile_returns.get("q5", 0.0) - quantile_returns.get("q1", 0.0)
 

@@ -1,5 +1,6 @@
 # src/easy_tdx/factor/transform.py
 """因子预处理 — 纯函数管道。"""
+
 from __future__ import annotations
 
 import numpy as np
