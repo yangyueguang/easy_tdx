@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from easy_tdx.portfolio.optimizer import EqualWeightOptimizer, FactorWeightedOptimizer
 from easy_tdx.portfolio.rebalance import RebalanceEngine
@@ -27,7 +26,11 @@ def _make_market(n_stocks: int = 10, n_days: int = 120, seed: int = 42) -> dict[
 
 class TestRebalanceEngine:
     def test_basic_run(self):
-        engine = RebalanceEngine(optimizer=EqualWeightOptimizer(), factor_name="momentum_20d", n_stocks=5, rebalance_freq="M", cash=1_000_000)
+        engine = RebalanceEngine(
+            optimizer=EqualWeightOptimizer(),
+            factor_name="momentum_20d", n_stocks=5,
+            rebalance_freq="M", cash=1_000_000,
+        )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.states) > 0
         assert len(result.rebalance_dates) > 0
@@ -35,7 +38,10 @@ class TestRebalanceEngine:
         assert "total_return" in result.performance
 
     def test_with_factor_weighted(self):
-        engine = RebalanceEngine(optimizer=FactorWeightedOptimizer(), factor_name="momentum_20d", n_stocks=5)
+        engine = RebalanceEngine(
+            optimizer=FactorWeightedOptimizer(),
+            factor_name="momentum_20d", n_stocks=5,
+        )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.states) > 0
 
@@ -44,12 +50,16 @@ class TestRebalanceEngine:
         assert result.performance["total_return"] == 0.0
 
     def test_equity_curve_dates_sorted(self):
-        result = RebalanceEngine(optimizer=EqualWeightOptimizer(), rebalance_freq="M").run(_make_market(), start_date=20240101, end_date=20240430)
+        result = RebalanceEngine(
+            optimizer=EqualWeightOptimizer(), rebalance_freq="M",
+        ).run(_make_market(), start_date=20240101, end_date=20240430)
         dates = result.equity_curve["datetime"].tolist()
         assert dates == sorted(dates)
 
     def test_trades_recorded(self):
-        engine = RebalanceEngine(optimizer=EqualWeightOptimizer(), n_stocks=3, rebalance_freq="M")
+        engine = RebalanceEngine(
+            optimizer=EqualWeightOptimizer(), n_stocks=3, rebalance_freq="M",
+        )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.trades) > 0
         assert "BUY" in result.trades["direction"].values

@@ -20,13 +20,13 @@ from .cmd_capital import capital_flow
 from .cmd_chanlun import chanlun
 from .cmd_ex import ex
 from .cmd_factor import factor
-from .cmd_pfactor import pfactor
 from .cmd_finance import f10, fund_flow
 from .cmd_indicator import indicator, indicator_list
 from .cmd_info import server_info, symbol_info
 from .cmd_kline import kline
 from .cmd_monitor import market_stat, unusual
 from .cmd_offline import offline
+from .cmd_pfactor import pfactor
 from .cmd_quote import quote, quote_list
 from .cmd_run_all import run_all
 from .cmd_tick import tick

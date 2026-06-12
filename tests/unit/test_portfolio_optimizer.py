@@ -57,7 +57,11 @@ class TestRiskParity:
         assert abs(sum(w.values()) - 1.0) < 1e-6
 
     def test_with_volatility_column(self):
-        scores = pd.DataFrame({"code": ["A", "B", "C"], "score": [1.0, 1.0, 1.0], "volatility": [0.1, 0.2, 0.4]})
+        scores = pd.DataFrame({
+            "code": ["A", "B", "C"],
+            "score": [1.0, 1.0, 1.0],
+            "volatility": [0.1, 0.2, 0.4],
+        })
         w = RiskParityOptimizer().optimize(scores, n_stocks=3)
         assert w["A"] > w["C"]
 

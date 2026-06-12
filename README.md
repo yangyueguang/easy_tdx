@@ -534,6 +534,41 @@ class MyStrategy(Strategy):
 
 完整 API 参考：[docs/backtest_usage.md](docs/backtest_usage.md)
 
+### 量化因子与组合管理
+
+新增三大模块：**因子引擎**（19 个内置因子 + 自定义扩展）、**因子分析**（IC/分层/衰减）、**组合管理**（4 种优化器 + 再平衡引擎）。加上**高级回测增强**：可插拔滑点模型（方根冲击/成交量比例）、执行仿真（TWAP/VWAP/限价单）、归因分析（Brinson + 因子归因）。
+
+```python
+from easy_tdx.factor import FactorEngine, FactorAnalyzer, preprocess
+from easy_tdx.portfolio import RebalanceEngine, FactorWeightedOptimizer
+from easy_tdx.backtest import BacktestEngine
+from easy_tdx.backtest.slippage import SquareRootSlippage
+from easy_tdx.backtest.execution import TWAPExecution
+
+# 因子研究
+engine = FactorEngine()
+factor_data = engine.compute_cross_section(data, ["momentum_20d", "rsi_14"])
+clean = preprocess(factor_data, ["momentum_20d", "rsi_14"])
+forward_returns = engine.compute_forward_returns(data, period=5)
+report = FactorAnalyzer(clean, forward_returns).full_report("momentum_20d")
+print(f"IC均值={report.mean_ic:.4f} ICIR={report.icir:.4f}")
+
+# 组合回测
+result = RebalanceEngine(
+    FactorWeightedOptimizer(), factor_name="momentum_20d", n_stocks=50, cash=1_000_000,
+).run(data, start_date=20230101, end_date=20240101)
+print(f"年化={result.performance['annual_return']:.2%}")
+
+# 高级回测（滑点 + 执行仿真）
+engine = BacktestEngine(
+    MyStrategy, cash=1_000_000,
+    slippage_model=SquareRootSlippage(impact_coeff=0.1),
+    execution_model=TWAPExecution(n_bars=3),
+)
+```
+
+详细用法和完整工作流示例：**[docs/quantitative-guide.md](docs/quantitative-guide.md)**
+
 ### 策略选股扫描（screen）
 
 把策略翻转成选股器：给定一个策略，扫描全市场找出今天触发买入信号的股票，再对这些信号做历史回测排名。**纯离线数据**，读取本地通达信 `.day` 文件，全市场约 30-60 秒。
@@ -910,6 +945,9 @@ uvicorn.run(app, host="0.0.0.0", port=8000)
 | `indicator-list` | 列出可用技术指标 |
 | `backtest` | 回测引擎（加载策略文件，输出绩效报告） |
 | `portfolio` | 多标的组合回测（共享资金池，均等分配，汇总绩效） |
+| `factor list` | 列出所有内置因子 |
+| `factor analyze` | 因子分析（IC/分层/衰减） |
+| `pfactor backtest` | 组合因子选股回测 |
 | `run-all` | 批量运行所有策略并排名（绩效排名 + 综合评分 + 可选图表） |
 | `screen scan` | 策略选股扫描（纯离线，全市场信号扫描） |
 | `screen rank` | 扫描结果回测排名（按夏普/回撤等指标排序） |
@@ -1439,7 +1477,9 @@ src/easy_tdx/
 ├── commands/          # 标准协议命令（无 IO）
 ├── codec/             # price / volume / datetime / frame / bitmap 编解码
 ├── chanlun/           # 缠论技术分析（K线合并/分型/笔/线段/中枢/买卖点/背驰）
-├── backtest/          # 回测引擎（Strategy基类/向量化引擎/多因子组合/组合回测/绩效分析）
+├── factor/            # 因子引擎（Factor ABC/19内置因子/截面计算/因子分析/预处理管道）
+├── portfolio/         # 组合管理（4优化器/风险模型/再平衡引擎）
+├── backtest/          # 回测引擎（Strategy基类/向量化引擎/多因子组合/滑点模型/执行仿真/归因分析）
 ├── screen/            # 策略选股扫描（scan信号扫描/rank回测排名/并发扫描/增量缓存）
 ├── realtime/          # 实时数据推送框架（EventBus/事件驱动/asyncio）
 ├── web/               # Web API（FastAPI REST + WebSocket）
@@ -1470,6 +1510,34 @@ ruff format --check src/ tests/                              # format check
 详见 [NOTICE](NOTICE) 和 [LICENSE](LICENSE)。
 
 ## Changelog
+
+### 1.11.1 (2026-06-12)
+
+**量化因子引擎 + 组合管理 + 高级回测增强** — 三大新模块，补齐从因子研究到组合执行的完整量化链路。
+
+**因子引擎（factor/）**：
+- `Factor` ABC + 注册表模式（`@register_factor` 装饰器），19 个内置因子
+- `FactorEngine`：单股多因子 / 截面批量 / 远期收益计算
+- 因子类别：动量、波动率、质量、成交量、技术（桥接 MyTT）、缠论（桥接 ChanlunAnalyser）、价值（占位）
+- 因子预处理管道：去极值（MAD）、标准化、排名归一化、填充缺失、正交化
+- `FactorAnalyzer`：IC（Spearman）、分层收益（5 组）、换手率、衰减分析、完整报告
+
+**组合管理（portfolio/）**：
+- 4 种权重优化器：等权、因子加权、风险平价（逆波动率）、均值方差（scipy 可选）
+- 风险模型：Ledoit-Wolf 收缩协方差、组合风险分解
+- `RebalanceEngine`：多期调仓回测（周/月/季），100 股整手、佣金+印花税
+
+**高级回测增强（backtest/）**：
+- 4 种滑点模型：Fixed、Percent、SquareRoot（Almgren-Chriss）、Volume
+- 4 种执行仿真：Immediate、TWAP、VWAP、Limit（限价单 + TTL）
+- `AttributionAnalyzer`：成本归因、Brinson 归因（配置/选股/交叉）、因子归因
+- 完全向后兼容（`BacktestEngine` 新增 `slippage_model` / `execution_model` 可选参数）
+
+**CLI**：
+- `easy-tdx factor list` / `factor analyze` — 因子列表和分析
+- `easy-tdx pfactor backtest` — 组合因子选股回测
+
+**测试**：556 passed, 0 failed（+176 新增）
 
 ### 1.10.5 (2026-06-12)
 
