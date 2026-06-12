@@ -7,6 +7,8 @@ import pandas as pd
 
 from easy_tdx import MyTT
 from easy_tdx.backtest.engine import BacktestEngine
+from easy_tdx.backtest.execution import TWAPExecution
+from easy_tdx.backtest.slippage import FixedSlippage
 from easy_tdx.backtest.strategy import Strategy
 
 
@@ -552,3 +554,73 @@ def test_chanlun_manual_result_overrides_auto():
 
     # Strategy should have received the manual result, not auto-computed one
     assert CheckerStrategy.received == manual_result
+
+
+# ── SlippageModel + ExecutionModel Integration ───────────────────────────────
+
+
+class TestEngineSlippageModel:
+    """BacktestEngine with SlippageModel integration."""
+
+    def test_engine_with_slippage_model(self) -> None:
+        """Engine uses SlippageModel."""
+
+        class SimpleBuy(Strategy):
+            def init(self) -> None:
+                pass
+
+            def next(self) -> None:
+                if self._bar_index == 0:
+                    self.buy(size=100)
+
+        df = _make_df(20)
+        engine = BacktestEngine(
+            SimpleBuy,
+            cash=100000,
+            slippage_model=FixedSlippage(per_share=0.05),
+        )
+        result = engine.run(df)
+        buy_trades = result.trades[result.trades["direction"] == "BUY"]
+        if len(buy_trades) > 0:
+            assert buy_trades.iloc[0]["slippage"] > 0
+
+
+class TestEngineExecutionModel:
+    """BacktestEngine with ExecutionModel integration."""
+
+    def test_engine_with_twap(self) -> None:
+        """Engine uses TWAP execution."""
+
+        class SimpleBuy(Strategy):
+            def init(self) -> None:
+                pass
+
+            def next(self) -> None:
+                if self._bar_index == 0:
+                    self.buy(size=300)
+
+        df = _make_df(20)
+        engine = BacktestEngine(
+            SimpleBuy,
+            cash=100000,
+            execution_model=TWAPExecution(n_bars=3),
+        )
+        result = engine.run(df)
+        buy_trades = result.trades[result.trades["direction"] == "BUY"]
+        assert len(buy_trades) >= 1
+
+    def test_engine_backward_compatible(self) -> None:
+        """No new params: behavior unchanged."""
+
+        class SimpleBuy(Strategy):
+            def init(self) -> None:
+                pass
+
+            def next(self) -> None:
+                if self._bar_index == 0:
+                    self.buy(size=100)
+
+        df = _make_df(20)
+        engine = BacktestEngine(SimpleBuy, cash=100000)
+        result = engine.run(df)
+        assert len(result.trades) >= 1
