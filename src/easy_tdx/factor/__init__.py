@@ -2,5 +2,6 @@
 """因子研究模块。"""
 
 from easy_tdx.factor.base import FACTORY_REGISTRY, Factor, register_factor
+from easy_tdx.factor.engine import FactorEngine
 
-__all__ = ["Factor", "register_factor", "FACTORY_REGISTRY"]
+__all__ = ["Factor", "register_factor", "FACTORY_REGISTRY", "FactorEngine"]
