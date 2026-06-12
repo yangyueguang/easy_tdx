@@ -102,7 +102,7 @@ def _create_app(
         description="通达信行情数据 REST + WebSocket API",
         version="1.0.0",
         lifespan=lifespan,
-        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2.1.3/bundles/redoc.standalone.js",
+        redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@3.0.0-rc.0/bundle/redoc.js",
     )
 
     # Store connection config in app.state for lifespan to use
