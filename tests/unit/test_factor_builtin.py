@@ -1,4 +1,5 @@
 """Test built-in factor computation correctness."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -22,15 +23,17 @@ def _make_df(n: int = 120, seed: int = 42) -> pd.DataFrame:
     amount = close * vol
 
     dates = pd.date_range("2024-01-01", periods=n, freq="D")
-    return pd.DataFrame({
-        "datetime": dates,
-        "open": open_,
-        "high": high,
-        "low": low,
-        "close": close,
-        "vol": vol,
-        "amount": amount,
-    })
+    return pd.DataFrame(
+        {
+            "datetime": dates,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "vol": vol,
+            "amount": amount,
+        }
+    )
 
 
 # ── Auto-registration ──────────────────────────────────────────────

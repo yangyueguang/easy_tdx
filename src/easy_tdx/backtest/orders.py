@@ -326,7 +326,7 @@ class OrderSimulator:
         if len(returns) < 2:
             return 0.0
         daily_vol = float(np.std(returns))
-        return daily_vol * np.sqrt(252)
+        return float(daily_vol * np.sqrt(252))
 
     def _execute_buy(
         self,

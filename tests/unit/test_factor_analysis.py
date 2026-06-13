@@ -1,5 +1,6 @@
 # tests/unit/test_factor_analysis.py
 """Test FactorAnalyzer and FactorReport."""
+
 from __future__ import annotations
 
 import numpy as np

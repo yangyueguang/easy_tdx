@@ -1,5 +1,6 @@
 # tests/unit/test_factor_transform.py
 """Test factor preprocessing functions."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -20,12 +21,14 @@ def _make_cross_section(n_dates: int = 20, n_stocks: int = 30, seed: int = 42) -
     rows = []
     for d in range(n_dates):
         for s in range(n_stocks):
-            rows.append({
-                "date": 20240101 + d,
-                "code": f"{s:06d}",
-                "momentum_20d": rng.normal(0.02, 0.05),
-                "volatility_20d": abs(rng.normal(0.02, 0.01)),
-            })
+            rows.append(
+                {
+                    "date": 20240101 + d,
+                    "code": f"{s:06d}",
+                    "momentum_20d": rng.normal(0.02, 0.05),
+                    "volatility_20d": abs(rng.normal(0.02, 0.01)),
+                }
+            )
     df = pd.DataFrame(rows)
     df.loc[0, "momentum_20d"] = 10.0
     df.loc[1, "momentum_20d"] = -10.0

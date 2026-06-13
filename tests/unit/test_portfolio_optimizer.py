@@ -1,4 +1,5 @@
 """Test portfolio optimizers."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -15,10 +16,12 @@ from easy_tdx.portfolio.optimizer import (
 
 def _make_scores(n: int = 20, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "code": [f"{i:06d}" for i in range(n)],
-        "score": rng.normal(0.02, 0.05, n),
-    })
+    return pd.DataFrame(
+        {
+            "code": [f"{i:06d}" for i in range(n)],
+            "score": rng.normal(0.02, 0.05, n),
+        }
+    )
 
 
 class TestEqualWeight:
@@ -57,11 +60,13 @@ class TestRiskParity:
         assert abs(sum(w.values()) - 1.0) < 1e-6
 
     def test_with_volatility_column(self):
-        scores = pd.DataFrame({
-            "code": ["A", "B", "C"],
-            "score": [1.0, 1.0, 1.0],
-            "volatility": [0.1, 0.2, 0.4],
-        })
+        scores = pd.DataFrame(
+            {
+                "code": ["A", "B", "C"],
+                "score": [1.0, 1.0, 1.0],
+                "volatility": [0.1, 0.2, 0.4],
+            }
+        )
         w = RiskParityOptimizer().optimize(scores, n_stocks=3)
         assert w["A"] > w["C"]
 

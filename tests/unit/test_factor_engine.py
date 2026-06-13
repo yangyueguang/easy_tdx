@@ -1,5 +1,6 @@
 # tests/unit/test_factor_engine.py
 """Test FactorEngine."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -23,15 +24,17 @@ def _make_df(n: int = 60, seed: int = 42) -> pd.DataFrame:
     amount = close * vol
 
     dates = pd.date_range("2024-01-01", periods=n, freq="D")
-    return pd.DataFrame({
-        "datetime": dates,
-        "open": open_,
-        "high": high,
-        "low": low,
-        "close": close,
-        "vol": vol,
-        "amount": amount,
-    })
+    return pd.DataFrame(
+        {
+            "datetime": dates,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "vol": vol,
+            "amount": amount,
+        }
+    )
 
 
 class _SimpleMomentum(Factor):
@@ -196,6 +199,7 @@ class TestFactorEngineWithBuiltins:
         df = _make_df(200)
 
         from easy_tdx.factor.builtin import list_factors
+
         for f_info in list_factors():
             name = f_info["name"]
             result = engine.compute_single(df, [name])

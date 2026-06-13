@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class WeightOptimizer(ABC):
@@ -25,7 +29,7 @@ class WeightOptimizer(ABC):
 _OPTIMIZER_REGISTRY: dict[str, type[WeightOptimizer]] = {}
 
 
-def register_optimizer(name: str) -> type[WeightOptimizer]:
+def register_optimizer(name: str) -> Callable[[type[WeightOptimizer]], type[WeightOptimizer]]:
     """注册优化器。"""
 
     def wrapper(cls: type[WeightOptimizer]) -> type[WeightOptimizer]:
@@ -127,6 +131,7 @@ class MeanVarianceOptimizer(WeightOptimizer):
             from scipy.optimize import minimize  # noqa: F401
 
             return self._optimize_with_scipy(factor_scores, n_stocks)
+
         except ImportError:
             fallback = EqualWeightOptimizer()
             return fallback.optimize(factor_scores, n_stocks)
@@ -136,7 +141,7 @@ class MeanVarianceOptimizer(WeightOptimizer):
         factor_scores: pd.DataFrame,
         n_stocks: int,
     ) -> dict[str, float]:
-        from scipy.optimize import minimize as _minimize  # type: ignore[import]
+        from scipy.optimize import minimize as _minimize
 
         top = factor_scores.nlargest(n_stocks, "score")
         if len(top) == 0:

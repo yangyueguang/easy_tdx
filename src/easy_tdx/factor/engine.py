@@ -22,8 +22,11 @@ def _resolve_factor(f: str | Factor) -> Factor:
 def _datetime_to_int(dt_val: object) -> int:
     """将 datetime 值转为 YYYYMMDD 整数。"""
     if hasattr(dt_val, "strftime"):
-        return int(dt_val.strftime("%Y%m%d"))  # type: ignore[union-attr]
-    return int(dt_val)
+        strftime = getattr(dt_val, "strftime")
+        return int(strftime("%Y%m%d"))
+    if isinstance(dt_val, (int, float)):
+        return int(dt_val)
+    return 0
 
 
 _ALL_DATES: object = object()

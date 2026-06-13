@@ -79,7 +79,7 @@ class ExecutionModel(ABC):
         returns = np.diff(close) / close[:-1]
         if len(returns) < 2:
             return 0.0
-        return float(np.std(returns)) * np.sqrt(252)
+        return float(float(np.std(returns)) * np.sqrt(252))
 
     def _calc_buy_size(
         self,

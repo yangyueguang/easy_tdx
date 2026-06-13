@@ -1,5 +1,6 @@
 # tests/unit/test_factor_base.py
 """Test Factor base class and registry."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -97,6 +98,7 @@ class TestRegistry:
                 return df["close"]
 
         with pytest.raises(ValueError, match="已注册"):
+
             @register_factor
             class Dup2(Factor):
                 name = "dup_test_factor"

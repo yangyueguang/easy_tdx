@@ -22,8 +22,6 @@ def DMA(S: npt.ArrayLike, A: npt.ArrayLike) -> NDArray: ...
 
 def MACD(
     CLOSE: npt.ArrayLike,
-    LOW: npt.ArrayLike,
-    HIGH: npt.ArrayLike,
     SHORT: int = ...,
     LONG: int = ...,
     M: int = ...,

@@ -1,4 +1,5 @@
 """Test RebalanceEngine."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,13 +15,17 @@ def _make_market(n_stocks: int = 10, n_days: int = 120, seed: int = 42) -> dict[
     for i in range(n_stocks):
         close = 10.0 + np.cumsum(rng.normal(0.01, 0.5, n_days))
         close = np.maximum(close, 1.0)
-        data[f"{i:06d}"] = pd.DataFrame({
-            "datetime": pd.date_range("2024-01-01", periods=n_days, freq="D"),
-            "open": close, "high": close + 0.3, "low": close - 0.3,
-            "close": close,
-            "vol": rng.integers(1e5, 1e7, n_days).astype(float),
-            "amount": close * 1e6,
-        })
+        data[f"{i:06d}"] = pd.DataFrame(
+            {
+                "datetime": pd.date_range("2024-01-01", periods=n_days, freq="D"),
+                "open": close,
+                "high": close + 0.3,
+                "low": close - 0.3,
+                "close": close,
+                "vol": rng.integers(1e5, 1e7, n_days).astype(float),
+                "amount": close * 1e6,
+            }
+        )
     return data
 
 
@@ -28,8 +33,10 @@ class TestRebalanceEngine:
     def test_basic_run(self):
         engine = RebalanceEngine(
             optimizer=EqualWeightOptimizer(),
-            factor_name="momentum_20d", n_stocks=5,
-            rebalance_freq="M", cash=1_000_000,
+            factor_name="momentum_20d",
+            n_stocks=5,
+            rebalance_freq="M",
+            cash=1_000_000,
         )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.states) > 0
@@ -40,7 +47,8 @@ class TestRebalanceEngine:
     def test_with_factor_weighted(self):
         engine = RebalanceEngine(
             optimizer=FactorWeightedOptimizer(),
-            factor_name="momentum_20d", n_stocks=5,
+            factor_name="momentum_20d",
+            n_stocks=5,
         )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.states) > 0
@@ -51,14 +59,17 @@ class TestRebalanceEngine:
 
     def test_equity_curve_dates_sorted(self):
         result = RebalanceEngine(
-            optimizer=EqualWeightOptimizer(), rebalance_freq="M",
+            optimizer=EqualWeightOptimizer(),
+            rebalance_freq="M",
         ).run(_make_market(), start_date=20240101, end_date=20240430)
         dates = result.equity_curve["datetime"].tolist()
         assert dates == sorted(dates)
 
     def test_trades_recorded(self):
         engine = RebalanceEngine(
-            optimizer=EqualWeightOptimizer(), n_stocks=3, rebalance_freq="M",
+            optimizer=EqualWeightOptimizer(),
+            n_stocks=3,
+            rebalance_freq="M",
         )
         result = engine.run(_make_market(), start_date=20240101, end_date=20240430)
         assert len(result.trades) > 0

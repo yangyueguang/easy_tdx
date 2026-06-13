@@ -57,7 +57,7 @@ class FactorAnalyzer:
                 continue
             if method == "spearman":
                 try:
-                    import scipy  # type: ignore[import-untyped]  # noqa: F401  # pandas spearman lazy import
+                    import scipy  # noqa: F401  # pandas spearman lazy import
                 except ImportError as e:
                     raise ImportError(
                         "Rank IC (spearman) 需要 scipy，请执行 `pip install easy-tdx[science]`"
