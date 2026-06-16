@@ -1618,6 +1618,10 @@ ruff format --check src/ tests/                              # format check
 
 ## Changelog
 
+### 1.14.4 (2026-06-16)
+
+**CI 修复** — 修复 v1.14.3 中 `cmd_chanlun.py` 两处 `click.echo(...)` 未按 `ruff format` 行宽规则合并导致的 CI 格式检查失败（纯格式调整，无功能变化）。
+
 ### 1.14.3 (2026-06-16)
 
 **缠论 CLI table 模式补日期** — 延续 v1.14.2 的可视化增强，在 `easy-tdx chanlun --table` 表格输出中也为中枢 / 买卖点 / 背驰带上对应日期，与 `笔` / `线段` 的风格对齐。日期缺失时显示 `—`。

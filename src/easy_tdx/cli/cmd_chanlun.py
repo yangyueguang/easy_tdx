@@ -139,9 +139,7 @@ def _print_table(result: dict[str, Any]) -> None:
     if result.get("mmds"):
         click.echo("── 买卖点 ──")
         for mmd in result["mmds"]:
-            click.echo(
-                f"  {mmd['type']} ({mmd['date'] or '—'}): {mmd['msg']}"
-            )
+            click.echo(f"  {mmd['type']} ({mmd['date'] or '—'}): {mmd['msg']}")
         click.echo()
 
     if result.get("bcs"):
@@ -150,9 +148,7 @@ def _print_table(result: dict[str, Any]) -> None:
             status = "✓" if bc["bc"] else "✗"
             prev = bc["prev_date"] or "—"
             curr = bc["curr_date"] or "—"
-            click.echo(
-                f"  [{status}] {bc['type']} ({prev} → {curr}): {bc['msg']}"
-            )
+            click.echo(f"  [{status}] {bc['type']} ({prev} → {curr}): {bc['msg']}")
 
     if result.get("multi_level"):
         ml = result["multi_level"]
