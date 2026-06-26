@@ -42,7 +42,7 @@ vipdoc 完整目录结构:
   TDX_HOME/T0002/fin/             历史财务数据（备用位置）
 
 关键函数:
-  detect_tdx_home() -> Path | None
+  detect_tdx_home() -> Path
       按优先级检测通达信安装目录。
 
   resolve_vipdoc(path=None) -> Path

@@ -196,9 +196,9 @@ self.sell(size=0)                             # 全部卖出
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `size` | float | 0 | 交易数量，0 = 全仓/清仓 |
-| `price` | float \| None | None | 限价，None = 市价单 |
-| `stop_loss` | float \| None | None | 止损价（预留） |
-| `take_profit` | float \| None | None | 止盈价（预留） |
+| `price` | float \| None | 限价，None = 市价单 |
+| `stop_loss` | float \| None | 止损价（预留） |
+| `take_profit` | float \| None | 止盈价（预留） |
 
 **查看当前持仓**：
 

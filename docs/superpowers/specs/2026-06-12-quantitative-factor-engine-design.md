@@ -124,7 +124,7 @@ class FactorEngine:
         self,
         data: dict[str, pd.DataFrame],    # {code: ohlcv}
         factors: list[str | Factor],
-        date: int | None = None,          # None = 最新日期
+        date: int = None,          # None = 最新日期
     ) -> pd.DataFrame:
         """多股票截面计算 → 返回长格式 DataFrame。
 

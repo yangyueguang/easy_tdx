@@ -97,9 +97,9 @@ class Signal:
     datetime: int
     direction: Literal["BUY", "SELL"]
     size: float                # 0 = 全仓/清仓
-    price: float | None        # None = 市价
-    stop_loss: float | None
-    take_profit: float | None
+    price: float        # None = 市价
+    stop_loss: float
+    take_profit: float
 ```
 
 ### 3.2 Trade
@@ -166,13 +166,13 @@ class Strategy(ABC):
         """注册指标函数。init() 后一次性计算，返回完整数组。"""
         ...
 
-    def buy(self, size: float = 0, price: float | None = None,
-            stop_loss: float | None = None, take_profit: float | None = None) -> None:
+    def buy(self, size: float = 0, price: float = None,
+            stop_loss: float = None, take_profit: float = None) -> None:
         """买入。size=0 全仓。"""
         ...
 
-    def sell(self, size: float = 0, price: float | None = None,
-             stop_loss: float | None = None, take_profit: float | None = None) -> None:
+    def sell(self, size: float = 0, price: float = None,
+             stop_loss: float = None, take_profit: float = None) -> None:
         """卖出。size=0 清仓。"""
         ...
 
@@ -183,7 +183,7 @@ class Strategy(ABC):
     def position(self) -> Position: ...
 
     @property
-    def chanlun(self) -> Any | None:
+    def chanlun(self) -> Any:
         """缠论分析结果（如果引擎注入了 chanlun_result 参数）。
         v1 仅作为数据通道，策略可读取笔/中枢/买卖点信息。
         v2 计划实现自动集成。"""
@@ -374,11 +374,11 @@ class BacktestEngine:
         execution: str = "next_open",       # "next_open" | "next_close" | "this_close" | "worst" | "best"
         position_mode: str = "full",        # "full" | "fixed" | "percent" | "signal_only"
         order_reject_policy: str = "reduce", # "reduce" | "skip"
-        benchmark: pd.DataFrame | None = None,
+        benchmark: pd.DataFrame = None,
     ):
         ...
 
-    def run(self, df: pd.DataFrame, chanlun_result: Any | None = None) -> BacktestResult:
+    def run(self, df: pd.DataFrame, chanlun_result: Any = None) -> BacktestResult:
         """执行回测。df 是 easy_tdx 标准 K 线 DataFrame（可含额外指标列）。
         chanlun_result 可选注入缠论分析结果，策略通过 self.chanlun 访问。
         注意：缠论结果中的时间戳按最近 K 线 datetime 匹配对齐（笔确认需后续K线，

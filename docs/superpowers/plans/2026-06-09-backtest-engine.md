@@ -167,9 +167,9 @@ class Signal:
     datetime: int
     direction: Literal["BUY", "SELL"]
     size: float  # 0 = 全仓/清仓
-    price: float | None = None  # None = 市价
-    stop_loss: float | None = None
-    take_profit: float | None = None
+    price: float = None  # None = 市价
+    stop_loss: float = None
+    take_profit: float = None
 
 
 @dataclass
@@ -549,7 +549,7 @@ class Strategy(ABC):
     """
 
     def __init__(self) -> None:
-        self._data_proxy: StrategyDataProxy | None = None
+        self._data_proxy: StrategyDataProxy = None
         self._bar_index: int = 0
         self._signals: list[Signal] = []
         self._indicators: dict[str, np.ndarray] = {}
@@ -584,8 +584,8 @@ class Strategy(ABC):
 
     # --- 交易指令 ---
 
-    def buy(self, size: float = 0, price: float | None = None,
-            stop_loss: float | None = None, take_profit: float | None = None) -> None:
+    def buy(self, size: float = 0, price: float = None,
+            stop_loss: float = None, take_profit: float = None) -> None:
         """生成买入信号。size=0 表示全仓。"""
         dt = self._get_datetime()
         self._signals.append(Signal(
@@ -593,8 +593,8 @@ class Strategy(ABC):
             price=price, stop_loss=stop_loss, take_profit=take_profit,
         ))
 
-    def sell(self, size: float = 0, price: float | None = None,
-             stop_loss: float | None = None, take_profit: float | None = None) -> None:
+    def sell(self, size: float = 0, price: float = None,
+             stop_loss: float = None, take_profit: float = None) -> None:
         """生成卖出信号。size=0 表示清仓。"""
         dt = self._get_datetime()
         self._signals.append(Signal(
@@ -877,7 +877,7 @@ class OrderSimulator:
         signals: list[Signal],
         cash: float,
         position: float,
-        position_mode: str | None = None,
+        position_mode: str = None,
     ) -> list[Trade]:
         """执行信号列表，返回成交记录。
 
@@ -920,7 +920,7 @@ class OrderSimulator:
 
         return trades
 
-    def _find_bar_index(self, datetime_val: int) -> int | None:
+    def _find_bar_index(self, datetime_val: int) -> int:
         """根据 datetime 找到对应的 bar 索引。"""
         dt_col = self._df["datetime"]
         if dt_col.dtype == object or hasattr(dt_col.iloc[0], "strftime"):
@@ -937,7 +937,7 @@ class OrderSimulator:
                 return int(matches.index[0])
         return None
 
-    def _resolve_exec_index(self, bar_idx: int | None) -> int | None:
+    def _resolve_exec_index(self, bar_idx: int) -> int:
         """根据执行模式确定成交的 bar 索引。"""
         if bar_idx is None:
             return None
@@ -966,7 +966,7 @@ class OrderSimulator:
 
     def _execute_buy(
         self, signal: Signal, price: float, cash: float, pos_mode: str,
-    ) -> Trade | None:
+    ) -> Trade:
         """执行买入。"""
         if pos_mode == "full" or signal.size == 0:
             # 全仓：用所有现金买，按 100 股整手
@@ -1002,7 +1002,7 @@ class OrderSimulator:
 
     def _execute_sell(
         self, signal: Signal, price: float, position: float, cash: float, pos_mode: str,
-    ) -> Trade | None:
+    ) -> Trade:
         """执行卖出。"""
         if pos_mode == "full" or signal.size == 0:
             size = position
@@ -1735,7 +1735,7 @@ class BacktestEngine:
         execution: str = "next_open",
         position_mode: str = "full",
         reject_policy: str = "reduce",
-        benchmark: pd.DataFrame | None = None,
+        benchmark: pd.DataFrame = None,
     ) -> None:
         if isinstance(strategy, type):
             self._strategy = strategy()
@@ -1751,7 +1751,7 @@ class BacktestEngine:
         self._reject_policy = reject_policy
         self._benchmark = benchmark
 
-    def run(self, df: pd.DataFrame, chanlun_result: Any | None = None) -> BacktestResult:
+    def run(self, df: pd.DataFrame, chanlun_result: Any = None) -> BacktestResult:
         """执行回测。"""
         n = len(df)
         if n == 0:
@@ -1805,7 +1805,7 @@ class BacktestEngine:
             config=config,
         )
 
-    def _generate_signals(self, df: pd.DataFrame, chanlun_result: Any | None) -> list[Signal]:
+    def _generate_signals(self, df: pd.DataFrame, chanlun_result: Any) -> list[Signal]:
         """通过 Strategy 生成交易信号。"""
         strat = self._strategy
         strat._bind_data(df)
@@ -1932,8 +1932,8 @@ def dsl_strategy(func: Callable[..., Any]) -> type[Strategy]:
 
     class DSLStrategy(Strategy):
         _signal_func = staticmethod(func)
-        _buy_mask: np.ndarray | None = None
-        _sell_mask: np.ndarray | None = None
+        _buy_mask: np.ndarray = None
+        _sell_mask: np.ndarray = None
 
         def init(self) -> None:
             pass
@@ -2093,15 +2093,15 @@ import click
 def backtest(
     market: str,
     code: str,
-    strategy_str: str | None,
-    strategy_file: str | None,
+    strategy_str: str,
+    strategy_file: str,
     cash: float,
     commission: float,
     execution: str,
     period: str,
     adjust: str,
     count: int,
-    indicators: str | None,
+    indicators: str,
     use_table: bool,
     output_fmt: str,
 ) -> None:
@@ -2157,7 +2157,7 @@ def backtest(
         _print_table(result)
 
 
-def _load_strategy(strategy_str: str | None, strategy_file: str | None) -> type:
+def _load_strategy(strategy_str: str, strategy_file: str) -> type:
     """加载策略类。"""
     if strategy_file:
         return _load_strategy_from_file(strategy_file)

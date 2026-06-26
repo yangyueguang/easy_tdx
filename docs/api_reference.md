@@ -584,7 +584,7 @@ K 线数据。
 
 ```python
 c.get_price_limits(market: Market, code: str, name: str,
-                    pre_close: float) -> tuple[float | None, float | None]
+                    pre_close: float) -> tuple[float, float]
 ```
 
 按交易规则计算涨跌停价。返回 `(涨停价, 跌停价)`，不适用时对应位置为 `None`。
@@ -600,7 +600,7 @@ c.get_price_limits(market: Market, code: str, name: str,
 from easy_tdx.codec.price_rules import compute_price_limits
 
 compute_price_limits(market, code, name, pre_close, listed_days=None)
-    -> tuple[float | None, float | None]
+    -> tuple[float, float]
 ```
 
 涨跌幅规则：

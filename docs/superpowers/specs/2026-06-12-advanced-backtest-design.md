@@ -95,7 +95,7 @@ impact = volatility × √(participation_rate) × price × size × impact_coeff
 `OrderSimulator` 新增参数：
 
 ```python
-slippage_model: SlippageModel | None = None
+slippage_model: SlippageModel = None
 ```
 
 当 `slippage_model` 非空时，忽略原有 `self.slippage` 参数，调用 `slippage_model.compute()` 计算滑点。
@@ -128,7 +128,7 @@ class ExecutionModel(ABC):
         commission: float,
         min_commission: float,
         stamp_tax: float,
-        slippage_model: SlippageModel | None,
+        slippage_model: SlippageModel,
     ) -> list[Trade]:
         """将信号转换为一笔或多笔成交记录。"""
         ...
@@ -219,7 +219,7 @@ class LimitExecution(ExecutionModel):
 `BacktestEngine` 新增参数：
 
 ```python
-execution_model: ExecutionModel | None = None
+execution_model: ExecutionModel = None
 ```
 
 当 `execution_model` 非空时，信号处理从执行模型走，不走原有 `_resolve_exec_index` / `_get_price`。
@@ -275,10 +275,10 @@ class AttributionAnalyzer:
         self,
         trades: pd.DataFrame,
         equity_curve: pd.DataFrame,
-        benchmark: pd.DataFrame | None = None,
-        factor_exposures: pd.DataFrame | None = None,
-        factor_returns: pd.DataFrame | None = None,
-        groups: pd.DataFrame | None = None,
+        benchmark: pd.DataFrame = None,
+        factor_exposures: pd.DataFrame = None,
+        factor_returns: pd.DataFrame = None,
+        groups: pd.DataFrame = None,
     ) -> None: ...
 
     def brinson_attribution(self) -> AttributionReport:
