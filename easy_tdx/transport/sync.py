@@ -265,7 +265,7 @@ class TdxConnection:
                         _recv_exact_sock(self._sock, hdr.zipsize)
                 except OSError:
                     try:
-                        self._sock.close()
+                        if self._sock: self._sock.close()
                     except OSError:
                         pass
                     self._sock = None
