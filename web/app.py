@@ -140,7 +140,6 @@ def _create_app(
     register_exception_handlers(app)
 
     # Mount routers
-    from easy_tdx.web.routers.announcement import router as announcement_router
     from easy_tdx.web.routers.bars import router as bars_router
     from easy_tdx.web.routers.block import router as block_router
     from easy_tdx.web.routers.board_mac import router as board_mac_router
@@ -168,8 +167,6 @@ def _create_app(
     app.include_router(ex_market_router, prefix="/api/v1")
     # 技术指标路由
     app.include_router(indicator_router, prefix="/api/v1")
-    # 公告检索路由（巨潮资讯网，独立数据源）
-    app.include_router(announcement_router, prefix="/api/v1")
     # 新浪财报三表路由（独立数据源）
     app.include_router(sina_router, prefix="/api/v1")
 
