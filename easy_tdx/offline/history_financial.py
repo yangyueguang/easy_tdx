@@ -9,7 +9,7 @@ from ..models.enums import Market
 from ..models.finance import FinancialRecord
 
 
-def read_history_financial(filepath: str | Path) -> list[FinancialRecord]:
+def read_history_financial(filepath: str) -> list[FinancialRecord]:
     """从本地 gpcw*.dat 或 gpcw*.zip 文件读取历史财务数据。
 
     复用 codec/financial.py 的 parse_financial_dat() 解析二进制格式。

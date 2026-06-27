@@ -386,7 +386,7 @@ class MacClient:
         period: Period = Period.DAILY,
         count: int = 30,
         adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, int | float]] = None,
+        params: dict[str, dict[str, float]] = None,
     ) -> pd.DataFrame:
         """获取 K 线数据并计算技术指标。
 
@@ -1283,7 +1283,7 @@ class AsyncMacClient:
         period: Period = Period.DAILY,
         count: int = 30,
         adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, int | float]] = None,
+        params: dict[str, dict[str, float]] = None,
     ) -> pd.DataFrame:
         """获取 K 线数据并计算技术指标（异步）。
 

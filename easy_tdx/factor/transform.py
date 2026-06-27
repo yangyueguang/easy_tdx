@@ -9,7 +9,7 @@ import pandas as pd
 
 def winsorize(
     factor_data: pd.DataFrame,
-    columns: str | list[str],
+    columns: str,
     method: str = "mad",
     threshold: float = 3.0,
 ) -> pd.DataFrame:
@@ -53,7 +53,7 @@ def winsorize(
 
 def zscore(
     factor_data: pd.DataFrame,
-    columns: str | list[str],
+    columns: str,
     cross_section: bool = True,
 ) -> pd.DataFrame:
     """标准化。"""
@@ -81,7 +81,7 @@ def zscore(
 
 def rank_normalize(
     factor_data: pd.DataFrame,
-    columns: str | list[str],
+    columns: str,
 ) -> pd.DataFrame:
     """排名归一化 [0, 1]。"""
     if isinstance(columns, str):
@@ -105,7 +105,7 @@ def rank_normalize(
 
 def fill_missing(
     factor_data: pd.DataFrame,
-    columns: str | list[str],
+    columns: str,
     method: str = "cross_mean",
 ) -> pd.DataFrame:
     """缺失值填充。"""
@@ -139,7 +139,7 @@ def fill_missing(
 def orthogonalize(
     factor_data: pd.DataFrame,
     target: str,
-    by: str | list[str],
+    by: str,
 ) -> pd.DataFrame:
     """因子正交化。"""
     if isinstance(by, str):

@@ -5,13 +5,13 @@ from __future__ import annotations
 import click
 
 
-def _parse_indicator_params(s: str) -> dict[str, dict[str, int | float]]:
+def _parse_indicator_params(s: str) -> dict[str, dict[str, int]]:
     """解析指标参数字符串。
 
     格式: ``SHORT=10,LONG=22`` 或 ``MACD.SHORT=10,KDJ.N=14``
     无前缀的参数应用到所有请求的指标。
     """
-    result: dict[str, dict[str, int | float]] = {}
+    result: dict[str, dict[str, int]] = {}
     if not s:
         return result
 
@@ -82,7 +82,7 @@ def indicator(
 
     # 将通配符参数应用到所有指标
     wildcard = parsed_params.pop("*", {})
-    final_params: dict[str, dict[str, int | float]] = {}
+    final_params: dict[str, dict[str, float]] = {}
     for name in indicator_list:
         final_params[name.upper()] = {**wildcard, **parsed_params.get(name.upper(), {})}
 

@@ -70,7 +70,7 @@ class ComputeIndicatorsRequest(BaseModel):
 
     data: list[dict[str, Any]] = Field(..., description="OHLCV records")
     indicators: list[str] = Field(..., min_length=1, description="指标名称列表")
-    params: dict[str, dict[str, int | float]] = Field(
+    params: dict[str, dict[str, float]] = Field(
         default=None, description="指标参数（可选）"
     )
     keep_ohlcv: bool = Field(default=True, description="保留原始 OHLCV 列")

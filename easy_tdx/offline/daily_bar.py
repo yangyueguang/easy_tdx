@@ -72,7 +72,7 @@ def _detect_security_type(filename: str) -> str:
     return "UNKNOWN"
 
 
-def read_daily_bars(filepath: str | Path) -> list[SecurityBar]:
+def read_daily_bars(filepath: str) -> list[SecurityBar]:
     """从本地 .day 文件读取日线 K 线数据。
 
     Args:
@@ -125,7 +125,7 @@ def read_daily_bars(filepath: str | Path) -> list[SecurityBar]:
 def find_daily_bar_file(
     market: int,
     code: str,
-    vipdoc: str | Path = None,
+    vipdoc: str = None,
 ) -> Path:
     """根据市场和代码定位日线文件路径。
 

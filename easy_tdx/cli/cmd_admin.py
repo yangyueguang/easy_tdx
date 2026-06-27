@@ -30,7 +30,7 @@ def ping(timeout: float, use_table: bool, output_fmt: str) -> None:
     click.echo("正在测速MAC服务器...", err=True)
     mac_results = ping_mac_all(timeout=timeout)
 
-    rows: list[dict[str, str | float]] = []
+    rows: list[dict[str, str]] = []
     for host, latency in std_results:
         rows.append({"group": "standard", "host": host, "latency_ms": round(latency * 1000, 1)})
     for host, latency in mac_results:

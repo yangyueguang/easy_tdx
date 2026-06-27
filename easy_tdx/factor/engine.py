@@ -9,7 +9,7 @@ import pandas as pd
 from easy_tdx.factor.base import FACTORY_REGISTRY, Factor
 
 
-def _resolve_factor(f: str | Factor) -> Factor:
+def _resolve_factor(f: str) -> Factor:
     """将因子名或实例解析为 Factor 实例。"""
     if isinstance(f, Factor):
         return f
@@ -38,7 +38,7 @@ class FactorEngine:
     def compute_single(
         self,
         df: pd.DataFrame,
-        factors: list[str | Factor],
+        factors: list[str],
     ) -> pd.DataFrame:
         """单股票多因子计算。"""
         if not factors:
@@ -54,7 +54,7 @@ class FactorEngine:
     def compute_cross_section(
         self,
         data: dict[str, pd.DataFrame],
-        factors: list[str | Factor],
+        factors: list[str],
         date: int = _ALL_DATES,  # type: ignore[assignment]
     ) -> pd.DataFrame:
         """多股票截面因子计算。

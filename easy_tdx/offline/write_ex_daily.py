@@ -32,7 +32,7 @@ def encode_ex_daily_bar(bar: ExDailyBar) -> bytes:
     )
 
 
-def get_last_ex_bar_date(filepath: str | Path) -> int:
+def get_last_ex_bar_date(filepath: str) -> int:
     """读取扩展市场 .day 文件最后一条记录的日期。
 
     Returns:
@@ -56,7 +56,7 @@ def _bar_date_int(bar: ExDailyBar) -> int:
 
 
 def append_ex_daily_bars(
-    filepath: str | Path,
+    filepath: str,
     bars: list[ExDailyBar],
 ) -> int:
     """将扩展市场 bars 追加写入 .day 文件，自动跳过重复日期。
@@ -82,7 +82,7 @@ def append_ex_daily_bars(
 
 
 def sync_ex_daily_bars(
-    filepath: str | Path,
+    filepath: str,
     server_bars: list[ExDailyBar],
 ) -> int:
     """将服务端获取的扩展市场日线同步写入本地 .day 文件。

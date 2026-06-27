@@ -19,7 +19,7 @@ class IndicatorSpec:
     inputs: tuple[str, ...]
     outputs: tuple[str, ...]
     func: Callable[..., object]
-    default_params: dict[str, int | float]
+    default_params: dict[str, float]
     description: str
 
 
@@ -31,7 +31,7 @@ def _reg(
     inputs: tuple[str, ...],
     outputs: tuple[str, ...],
     func: Callable[..., object],
-    defaults: dict[str, int | float],
+    defaults: dict[str, float],
     desc: str,
 ) -> None:
     _REGISTRY[name.upper()] = IndicatorSpec(
@@ -257,7 +257,7 @@ def list_indicators() -> list[dict[str, object]]:
 def compute_indicators(
     df: pd.DataFrame,
     indicators: list[str],
-    params: dict[str, dict[str, int | float]] = None,
+    params: dict[str, dict[str, float]] = None,
     keep_ohlcv: bool = True,
     tail: int = None,
 ) -> pd.DataFrame:

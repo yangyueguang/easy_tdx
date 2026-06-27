@@ -26,7 +26,7 @@ def _decode_tdx_time(num: int) -> tuple[int, int]:
     return num // 60, num % 60
 
 
-def read_5min_bars(filepath: str | Path) -> list[SecurityBar]:
+def read_5min_bars(filepath: str) -> list[SecurityBar]:
     """从本地 .5 文件读取 5 分钟 K 线数据。
 
     OHLC 为整数，需除以 100 得到实际价格。
@@ -74,7 +74,7 @@ def read_5min_bars(filepath: str | Path) -> list[SecurityBar]:
     return results
 
 
-def read_lc_min_bars(filepath: str | Path) -> list[SecurityBar]:
+def read_lc_min_bars(filepath: str) -> list[SecurityBar]:
     """从本地 .lc1/.lc5 文件读取分钟 K 线数据。
 
     OHLC 为 float 类型，无需额外转换。

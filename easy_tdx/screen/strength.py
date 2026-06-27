@@ -153,7 +153,7 @@ class StrengthRanker:
 
     def __init__(
         self,
-        vipdoc_path: str | Path = None,
+        vipdoc_path: str = None,
         preset: str = "steady",
         w5: float = None,
         w20: float = None,

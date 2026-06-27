@@ -36,10 +36,6 @@ from .cmd_web import serve
 
 
 @click.group()
-@click.version_option(
-    version=__import__("importlib.metadata", fromlist=["version"]).version("easy-tdx"),
-    prog_name="easy-tdx",
-)
 def cli() -> None:
     """easy-tdx -- 通达信行情数据 CLI（默认 JSON 输出，适合 Agent 使用）。
 

@@ -368,7 +368,7 @@ class CombinationRunner:
 
     def run_combination(
         self,
-        indices: list[int] | tuple[int, ...],
+        indices,
         mode: str = "MAJORITY",
     ) -> BacktestResult:
         """运行指定因子组合的回测。

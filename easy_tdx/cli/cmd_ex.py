@@ -170,7 +170,7 @@ def markets() -> None:
     from ..mac.enums import ExMarket
     from .output import print_output
 
-    rows: list[dict[str, int | str]] = []
+    rows: list[dict[str, int]] = []
     for m in ExMarket:
         rows.append({"code": m.value, "name": m.name})
 

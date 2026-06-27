@@ -130,7 +130,7 @@ def WMA(S, N):  # 通达信S序列的N日加权移动平均 Yn = (1*X1+2*X2+3*X3
 
 
 def DMA(S, A):  # 求S的动态移动平均，A作平滑因子,必须 0<A<1  (此为核心函数，非指标）
-    if isinstance(A, int | float):
+    if isinstance(A, int):
         return pd.Series(S).ewm(alpha=A, adjust=False).mean().values
     A = np.array(A)
     A[np.isnan(A)] = 1.0

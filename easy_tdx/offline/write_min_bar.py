@@ -60,7 +60,7 @@ def encode_5min_bar(bar: SecurityBar) -> bytes:
 
 
 def get_last_5min_bar_datetime(
-    filepath: str | Path,
+    filepath: str
 ) -> tuple[int, int, int, int, int]:
     """读取 .5 文件最后一条记录的日期时间。
 
@@ -85,7 +85,7 @@ def get_last_5min_bar_datetime(
 
 
 def append_5min_bars(
-    filepath: str | Path,
+    filepath: str,
     bars: list[SecurityBar],
 ) -> int:
     """将 5 分钟线 bars 追加写入 .5 文件，自动跳过重复时间点。
@@ -135,7 +135,7 @@ def encode_lc_min_bar(bar: SecurityBar) -> bytes:
 
 
 def get_last_lc_min_bar_datetime(
-    filepath: str | Path,
+    filepath: str
 ) -> tuple[int, int, int, int, int]:
     """读取 .lc1/.lc5 文件最后一条记录的日期时间。
 
@@ -160,7 +160,7 @@ def get_last_lc_min_bar_datetime(
 
 
 def append_lc_min_bars(
-    filepath: str | Path,
+    filepath: str,
     bars: list[SecurityBar],
 ) -> int:
     """将分钟线 bars 追加写入 .lc1/.lc5 文件，自动跳过重复时间点。

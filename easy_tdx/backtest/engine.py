@@ -50,7 +50,7 @@ class BacktestEngine:
 
     def __init__(
         self,
-        strategy: type[Strategy] | Strategy,
+        strategy: type[Strategy],
         cash: float = 100000.0,
         commission: float = 0.0003,
         min_commission: float = 5.0,

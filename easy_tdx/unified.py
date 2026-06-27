@@ -133,7 +133,7 @@ class UnifiedTdxClient:
         period: Period = Period.DAILY,
         count: int = 30,
         adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, int | float]] = None,
+        params: dict[str, dict[str, float]] = None,
     ) -> pd.DataFrame:
         return self._ensure_mac().get_stock_kline_with_indicators(
             market,
@@ -425,7 +425,7 @@ class AsyncUnifiedTdxClient:
         period: Period = Period.DAILY,
         count: int = 30,
         adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, int | float]] = None,
+        params: dict[str, dict[str, float]] = None,
     ) -> pd.DataFrame:
         mac = await self._ensure_mac()
         return await mac.get_stock_kline_with_indicators(

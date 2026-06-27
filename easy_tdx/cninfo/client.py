@@ -164,8 +164,8 @@ class CninfoClient:
 
     def download_pdf(
         self,
-        announcement: Announcement | pd.Series[Any],
-        dest_dir: str | os.PathLike[str] = ".",
+        announcement: pd.Series[Any],
+        dest_dir: str = ".",
         *,
         filename: str = None,
     ) -> str:

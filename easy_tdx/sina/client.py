@@ -86,7 +86,7 @@ class SinaClient:
     def get_financial_report(
         self,
         code: str,
-        report_type: ReportType | str = "lrb",
+        report_type: ReportType = "lrb",
         *,
         num: int = 8,
     ) -> pd.DataFrame:

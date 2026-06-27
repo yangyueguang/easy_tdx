@@ -291,7 +291,7 @@ class GbbqRecord:
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
 
-def read_gbbq(filepath: str | Path) -> list[GbbqRecord]:
+def read_gbbq(filepath: str) -> list[GbbqRecord]:
     """从本地 gbbq 文件读取股本变迁数据（XOR 加密）。
 
     Args:

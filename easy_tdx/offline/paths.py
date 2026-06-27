@@ -37,7 +37,7 @@ def detect_tdx_home() -> Path:
     return None
 
 
-def resolve_vipdoc(path: str | Path = None) -> Path:
+def resolve_vipdoc(path: str = None) -> Path:
     """解析 vipdoc 数据目录。
 
     Args:

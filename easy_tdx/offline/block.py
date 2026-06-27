@@ -17,7 +17,7 @@ class CustomerBlock:
     codes: list[str] = field(default_factory=list)
 
 
-def read_block_dat(filepath: str | Path) -> list[TdxBlock]:
+def read_block_dat(filepath: str) -> list[TdxBlock]:
     """从本地 .dat 板块文件读取板块数据。
 
     直接复用 codec/block.py 的 parse_block_dat()。
@@ -35,7 +35,7 @@ def read_block_dat(filepath: str | Path) -> list[TdxBlock]:
     return parse_block_dat(data, filename=filepath.name)
 
 
-def read_customer_blocks(block_dir: str | Path) -> list[CustomerBlock]:
+def read_customer_blocks(block_dir: str) -> list[CustomerBlock]:
     """从通达信自定义板块目录读取板块数据。
 
     目录结构：

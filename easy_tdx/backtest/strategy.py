@@ -100,7 +100,7 @@ class StrategyDataProxy:
             if col == "datetime":
                 continue
             arr = df[col].to_numpy()
-            if len(arr) > 0 and isinstance(arr[0], np.datetime64 | pd.Timestamp):
+            if len(arr) > 0 and isinstance(arr[0], np.datetime64):
                 # datetime 列转为 int (YYYYMMDD)
                 self._arrays[col] = _datetime_to_int(arr)
             else:
@@ -155,8 +155,8 @@ class StrategyDataProxy:
 
 
 def crossover(
-    a: NDArray | pd.Series | _SeriesAccessor,
-    b: NDArray | pd.Series | _SeriesAccessor,
+    a: NDArray,
+    b: NDArray,
 ) -> NDArray:
     """检测 a 从下方穿越 b（金叉）。
 

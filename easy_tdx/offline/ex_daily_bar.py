@@ -28,7 +28,7 @@ class ExDailyBar:
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
 
-def read_ex_daily_bars(filepath: str | Path) -> list[ExDailyBar]:
+def read_ex_daily_bars(filepath: str) -> list[ExDailyBar]:
     """从本地扩展市场 .day 文件读取日线数据。
 
     文件位于 vipdoc/ds/ 目录下，如 29#A1801.day。

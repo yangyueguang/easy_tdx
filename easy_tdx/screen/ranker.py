@@ -61,7 +61,7 @@ class SignalRanker:
     def __init__(
         self,
         strategy_cls: type[Strategy],
-        vipdoc_path: str | Path = None,
+        vipdoc_path: str = None,
         cash: float = 1_000_000.0,
         commission: float = 0.0003,
         count: int = 0,

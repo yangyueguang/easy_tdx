@@ -53,7 +53,7 @@ def encode_daily_bar(
 # ---------------------------------------------------------------------------
 
 
-def get_last_bar_date(filepath: str | Path) -> int:
+def get_last_bar_date(filepath: str) -> int:
     """读取 .day 文件最后一条记录的日期。
 
     Returns:
@@ -82,7 +82,7 @@ def _bar_date_int(bar: SecurityBar) -> int:
 
 
 def append_daily_bars(
-    filepath: str | Path,
+    filepath: str,
     bars: list[SecurityBar],
     price_coeff: float,
     vol_coeff: float,
@@ -124,7 +124,7 @@ def append_daily_bars(
 
 
 def sync_daily_bars_from_security_bars(
-    filepath: str | Path,
+    filepath: str,
     server_bars: list[SecurityBar],
     price_coeff: float,
     vol_coeff: float,

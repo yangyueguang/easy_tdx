@@ -16,7 +16,7 @@ from easy_tdx.factor.builtin import (  # noqa: F401
 )
 
 
-def list_factors() -> list[dict[str, str | tuple[str, ...]]]:
+def list_factors() -> list[dict[str, str]]:
     """返回所有已注册因子的元数据。"""
     return [
         {

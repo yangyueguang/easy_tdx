@@ -136,7 +136,7 @@ class XD(Line):
 class ZS:
     """中枢对象。"""
 
-    lines: list[BI | XD] = field(default_factory=list)  # 构成中枢的线
+    lines: list[BI] = field(default_factory=list)  # 构成中枢的线
     zg: float = 0.0  # 中枢上沿（重叠区间最高）
     zd: float = 0.0  # 中枢下沿（重叠区间最低）
     gg: float = 0.0  # 中枢最高点
@@ -147,7 +147,7 @@ class ZS:
     start: FX = None  # 起始分型
     end: FX = None  # 结束分型
 
-    def add_line(self, line: BI | XD) -> None:
+    def add_line(self, line: BI) -> None:
         self.lines.append(line)
 
     @property
@@ -205,8 +205,8 @@ class BC:
     bc_type: BCType
     bc: bool = False  # 是否背驰
     zs: ZS = None
-    curr: BI | XD = None  # 当前背驰笔/线段（用于可视化锚定日期）
-    prev: BI | XD = None  # 前一同向笔/线段（力度对照基准）
+    curr: BI = None  # 当前背驰笔/线段（用于可视化锚定日期）
+    prev: BI = None  # 前一同向笔/线段（力度对照基准）
     msg: str = ""
 
     def __str__(self) -> str:
