@@ -1,49 +1,8 @@
 """MAC 协议高层 API：MacClient（同步）和 AsyncMacClient（asyncio）。"""
 
 from __future__ import annotations
-
-import asyncio
 import logging
-import time
-from dataclasses import asdict
-from types import TracebackType
-from typing import Any, TypeVar
 
-import pandas as pd
-
-from .._df import _to_df
-from ..codec.bitmap import Fields, PresetField
-from ..commands.base import BaseCommand
-from ..config import get_best_host, get_mac_hosts, get_port, get_timeout, save_best_host
-from ..exceptions import TdxConnectionError
-from ..transport.async_ import AsyncTdxConnection
-from ..transport.sync import TdxConnection, ping_mac_all
-from .commands import (
-    BoardListCmd,
-    BoardMembersQuotesCmd,
-    KlineOffsetCmd,
-    ServerInfoCmd,
-    SymbolAuctionCmd,
-    SymbolBarCmd,
-    SymbolBelongBoardCmd,
-    SymbolCapitalFlowCmd,
-    SymbolInfoCmd,
-    SymbolQuotesCmd,
-    SymbolTickChartCmd,
-    SymbolTransactionCmd,
-    TickChartsCmd,
-    UnusualCmd,
-)
-from .commands.chart_sampling import ChartSamplingCmd
-from .commands.file_query import FileDownloadCmd, FileListCmd
-from .commands.goods_list import GoodsListCmd
-from .enums import Adjust, BoardType, Category, FilterType, Period, SortOrder, SortType
-from .models import (
-    MacBar,
-    MacMultiTickChart,
-    MacQuoteField,
-    MacTickChart,
-)
 
 _RETRY_DELAYS = (0.1, 0.5, 1.0, 2.0)
 _KLINE_PAGE_SIZE = 700
@@ -51,6 +10,1815 @@ _BOARD_MEMBERS_PAGE_SIZE = 80
 
 _logger = logging.getLogger(__name__)
 
+
+from commands import *
+from codec import _to_df
+"""MAC 协议数据模型。"""
+
+from dataclasses import dataclass, field
+from datetime import date, datetime, time
+from typing import Any
+"""MAC 协议枚举常量。"""
+
+
+from enum import IntEnum
+
+
+class Period(IntEnum):
+    """K线周期。"""
+
+    MIN_5 = 0
+    MIN_15 = 1
+    MIN_30 = 2
+    MIN_60 = 3
+    DAILY = 4
+    WEEKLY = 5
+    MONTHLY = 6
+    MIN_1 = 7
+    MINS = 8  # 多分钟（配合 times 参数）
+    DAYS = 9  # 多日（配合 times 参数）
+    QUARTERLY = 10
+    YEARLY = 11
+    SECONDS = 13  # 多秒（配合 times 参数）
+
+
+class Adjust(IntEnum):
+    """复权类型。"""
+
+    NONE = 0
+    QFQ = 1  # 前复权
+    HFQ = 2  # 后复权
+
+
+class BoardType(IntEnum):
+    """板块类型。"""
+
+    HY = 0  # 行业一级
+    HY2 = 1  # 行业二级
+    GN = 3  # 概念
+    FG = 4  # 风格
+    DQ = 5  # 地区
+    OTHER = 6  # 其他
+    YJ_LEVEL1 = 7  # 业绩一级
+    YJ_LEVEL2 = 8  # 业绩二级
+    YJ_LEVEL3 = 9  # 业绩三级
+    ALL = 255  # 全部
+
+
+class ExBoardType(IntEnum):
+    """扩展市场板块类型。"""
+
+    HK_ALL = 0  # 港股板块
+    HK_GN = 1  # 港股概念
+    HK_HY = 2  # 港股行业
+    US_ALL = 3  # 美股板块
+    US_GN = 4  # 美股概念
+    US_HY = 5  # 美股行业
+
+
+class Category(IntEnum):
+    """市场分类。"""
+
+    SH = 0  # 上证A
+    SZ = 2  # 深证A
+    A = 6  # 全部A股
+    B = 7  # B股
+    KCB = 8  # 科创板
+    BJ = 12  # 北证A
+    CYB = 14  # 创业板
+
+    BOARD_ALL = 10000  # 全部板块
+    BOARD_HY = 10001  # 行业一级
+    BOARD_HY2 = 10002  # 行业二级
+    BOARD_GN = 10004  # 概念
+    BOARD_FG = 10005  # 风格
+    BOARD_DQ = 10006  # 地区
+    BOARD_OTHER = 10007  # 其他
+    BOARD_YJ_LEVEL1 = 10008  # 业绩一级
+    BOARD_YJ_LEVEL2 = 10009  # 业绩二级
+    BOARD_YJ_LEVEL3 = 10010  # 业绩三级
+
+    HGT = 0x2AF9  # 沪股通
+    SGT = 0x2B01  # 深股通
+    FXJS = 0x2AFF  # 风险警示
+    ETF = 0x2AFD  # ETF基金
+    LOF = 0x2B04  # LOF基金
+    ZS = 0x2B2C  # 沪深系列指数
+
+
+class SortType(IntEnum):
+    """排序字段。"""
+
+    CODE = 0x00
+    NAME = 0x01
+    PRE_CLOSE = 0x02
+    OPEN = 0x03
+    HIGH = 0x04
+    LOW = 0x05
+    PRICE = 0x06
+    BID = 0x07
+    ASK = 0x08
+    VOLUME = 0x09
+    TOTAL_AMOUNT = 0x0A
+    LAST_VOLUME = 0x0B
+    CHANGE = 0x0C
+    CHANGE_PCT = 0x0E  # 涨幅%
+    AMPLITUDE_PCT = 0x0F  # 振幅%
+    AVG = 0x10  # 均价
+    PE_DYNAMIC = 0x11  # 市盈(动)
+    ENTRUST_RATIO = 0x12  # 委比%
+    INSIDE_VOLUME = 0x13  # 内盘
+    OUTSIDE_VOLUME = 0x14  # 外盘
+    IN_OUT_RATIO = 0x15  # 内外比
+    BID_VOLUME = 0x17  # 买量
+    ASK_VOLUME = 0x18  # 卖量
+    LOCKED_RATIO = 0x1B  # 封成比
+    LOCKED_AMOUNT = 0x1C  # 封单额
+    OPEN_AMOUNT = 0x1D  # 开盘金额
+    OPEN_TURNOVER_PCT = 0x1E  # 开盘换手%
+    VOL_RATIO = 0x23  # 量比
+    TURNOVER_RATE = 0x24  # 换手%
+    FLOAT_SHARES = 0x25  # 流通股(亿)
+    FLOAT_MARKET_CAP = 0x26  # 流通市值
+    TOTAL_MARKET_CAP_AB = 0x27  # AB股总市值
+    UNMATCHED_VOLUME = 0x2A  # 未匹配量
+    STRENGTH_PCT = 0x2D  # 强弱度%
+    SPEED_PCT = 0x2E  # 涨速%
+    ACTIVITY = 0x2F  # 活跃度
+    SHORT_TURNOVER_PCT = 0xCC  # 短换手%
+    VOL_SPEED_PCT = 0xD0  # 量涨速%
+    MAIN_NET_AMOUNT = 0xD4  # 主力净额
+    MAIN_NET_RATIO = 0xD7  # 主力净比%
+    AUCTION_LIMIT_BUY = 0x102  # 竞价涨停买
+    AMOUNT_2M = 0x10C  # 2分钟金额
+    OPEN_SNATCH_PCT = 0x10A  # 开盘抢筹%
+    OPEN_PCT = 0x119  # 开盘%
+    HIGH_PCT = 0x11A  # 最高%
+    LOW_PCT = 0x11B  # 最低%
+    AVG_CHANGE_PCT = 0x11C  # 均涨幅%
+    DRAWDOWN_PCT = 0x11E  # 回撤%
+    ATTACK_PCT = 0x11F  # 攻击%
+
+
+class SortOrder(IntEnum):
+    """排序方向。"""
+
+    NONE = 0
+    DESC = 1
+    ASC = 2
+
+
+class FilterType(IntEnum):
+    """过滤标志（位掩码，可组合）。"""
+
+    NEW = 1  # 次新股
+    KC = 2  # 科创板
+    ST = 4  # ST/*ST
+    CY = 8  # 创业板
+    HK_CONNECT = 16  # 互联互通标的(仅核准制)
+    BJ = 32  # 北交所
+    APPROVAL = 64  # 核准制股票
+    REGISTRATION = 128  # 注册制股票
+
+
+class ExMarket(IntEnum):
+    """扩展市场代码。"""
+
+    TEMP_STOCK = 1  # 临时股
+    ZZ_FUTURES_OPTION = 4  # 郑州商品期权
+    DL_FUTURES_OPTION = 5  # 大连商品期权
+    SH_FUTURES_OPTION = 6  # 上海商品期权
+    CFFEX_OPTION = 7  # 中金所期权
+    SH_STOCK_OPTION = 8  # 上海股票期权
+    SZ_STOCK_OPTION = 9  # 深圳股票期权
+    BASIC_FX = 10  # 基本汇率
+    CROSS_FX = 11  # 交叉汇率
+    INTL_INDEX = 12  # 国际指数
+    COMEX_FUTURES = 16  # 纽约COMEX
+    NYMEX_FUTURES = 17  # 纽约NYMEX
+    CBOT_FUTURES = 18  # 芝加哥CBOT
+    HK_FINANCIAL_FUTURES = 23  # 香港金融期货
+    HK_FINANCIAL_OPTIONS = 24  # 香港金融期权
+    HK_STOCK_FUTURES = 25  # 香港股票期货
+    HK_STOCK_OPTIONS = 26  # 香港股票期权
+    HK_INDEX = 27  # 香港指数
+    ZZ_FUTURES = 28  # 郑州商品
+    DL_FUTURES = 29  # 大连商品
+    SH_FUTURES = 30  # 上海期货
+    HK_MAIN_BOARD = 31  # 香港主板
+    OPEN_END_FUND = 33  # 开放式基金
+    MONETARY_FUND = 34  # 货币型基金
+    MACRO_INDICATOR = 38  # 宏观指标
+    FUTURES_INDEX = 42  # 商品指数
+    B_TO_H = 43  # B股转H股
+    NEEQ = 44  # 股转系统
+    SH_GOLD = 46  # 上海黄金
+    CFFEX_FUTURES = 47  # 中金所期货
+    HK_GEM = 48  # 香港创业板
+    HK_FUND = 49  # 香港基金
+    TREASURY_VALUATION = 54  # 国债预发行
+    SUNSHINE_PRIVATE_FUND = 56  # 阳光私募基金
+    BROKER_COLLECTIVE_FINANCE = 57  # 券商集合理财
+    BROKER_MONETARY_FINANCE = 58  # 券商货币理财
+    MAIN_FUTURES_CONTRACT = 60  # 主力期货合约
+    CSI_INDEX = 62  # 中证指数
+    GZ_ARBITRAGE_FUTURES = 65  # 广州套利期货
+    GZ_FUTURES = 66  # 广州期货
+    GZ_OPTIONS = 67  # 广州期权
+    RISK_CONTROL_INDEX = 68  # 风控指数
+    HUAZHENG_INDEX = 69  # 华证指数
+    EXTENDED_SECTOR_INDEX = 70  # 扩展板块指数
+    HK_STOCK_GGT = 71  # 港股-港股通
+    GE_STOCK = 73  # 德国股票
+    US_STOCK = 74  # 美国股票
+    SG_STOCK = 78  # 新加坡股票
+    MONEY_MARKET = 91  # 资金市场
+    FUND_VALUATION = 93  # 基金估值
+    HK_DARK_POOL = 98  # 港股暗盘
+    CODE_MIRROR = 100  # 代码镜像
+    SZSE_INDEX = 102  # 国证指数
+
+
+@dataclass(frozen=True)
+class MacQuoteField:
+    """MAC 协议自定义字段报价中的一条记录。"""
+
+    market: int
+    code: str
+    name: str
+    fields: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MacSymbolInfo:
+    """个股简要特征。"""
+
+    market: int
+    code: str
+    name: str
+    time: datetime
+    activity: int
+    pre_close: float
+    open: float
+    high: float
+    low: float
+    close: float
+    momentum: float
+    vol: int
+    amount: float
+    inside_volume: int
+    outside_volume: int
+    turnover: float
+    avg: float
+
+
+@dataclass(frozen=True)
+class MacBar:
+    """MAC 协议 K 线数据。"""
+
+    datetime: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    vol: float
+    amount: float
+    float_shares: float = 0.0
+
+
+@dataclass(frozen=True)
+class MacTick:
+    """分时数据点。"""
+
+    time: time
+    price: float
+    avg: float
+    vol: int
+    momentum: float = 0.0
+
+
+@dataclass(frozen=True)
+class MacTickChart:
+    """单日分时图。"""
+
+    market: int
+    code: str
+    name: str
+    pre_close: float
+    open: float
+    high: float
+    low: float
+    close: float
+    vol: int
+    amount: float
+    turnover: float = 0.0
+    avg: float = 0.0
+    charts: list[MacTick] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MacMultiTickDay:
+    """多日分时图中的一天。"""
+
+    date: date
+    pre_close: float
+    ticks: list[MacTick] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MacMultiTickChart:
+    """多日分时图。"""
+
+    market: int
+    code: str
+    name: str
+    pre_close: float
+    open: float
+    high: float
+    low: float
+    close: float
+    vol: int
+    amount: float
+    turnover: float = 0.0
+    avg: float = 0.0
+    charts: list[MacMultiTickDay] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MacTransaction:
+    """逐笔成交。"""
+
+    time: time
+    price: float
+    vol: int
+    trade_count: int
+    bs_flag: int  # 0=买入 / 1=卖出 / 2=中性 / 5=盘后
+
+
+@dataclass(frozen=True)
+class BoardInfo:
+    """板块信息。"""
+
+    market: int
+    code: str
+    name: str
+    price: float
+    rise_speed: float
+    pre_close: float
+    symbol_market: int
+    symbol_code: str
+    symbol_name: str
+    symbol_price: float
+    symbol_rise_speed: float
+    symbol_pre_close: float
+
+
+@dataclass(frozen=True)
+class AuctionItem:
+    """集合竞价数据。"""
+
+    time: time
+    price: float
+    matched: int
+    unmatched: int
+
+
+@dataclass(frozen=True)
+class UnusualItem:
+    """异动数据。"""
+
+    index: int
+    market: int
+    code: str
+    name: str
+    time: time
+    desc: str
+    value: str
+    unusual_type: int
+
+
+@dataclass(frozen=True)
+class CapitalFlowData:
+    """资金流向数据。"""
+
+    date: str
+    main_in: float = 0.0
+    main_out: float = 0.0
+    main_net: float = 0.0
+    small_in: float = 0.0
+    small_out: float = 0.0
+    small_net: float = 0.0
+    mid_in: float = 0.0
+    mid_out: float = 0.0
+    mid_net: float = 0.0
+    large_in: float = 0.0
+    large_out: float = 0.0
+    large_net: float = 0.0
+
+
+@dataclass(frozen=True)
+class BelongBoardInfo:
+    """个股所属板块信息。"""
+
+    board_type: int
+    market: int
+    board_code: str
+    board_name: str
+    close: float
+    pre_close: float
+
+
+@dataclass(frozen=True)
+class ServerSession:
+    """服务器交易时段信息。"""
+
+    today: str
+    last_trading_day: str
+    sessions_1: list[dict[str, Any]] = field(default_factory=list)
+    sessions_2: list[dict[str, Any]] = field(default_factory=list)
+    market_param_1: int = 0
+    market_param_2: int = 0
+
+
+@dataclass(frozen=True)
+class KlineOffsetInfo:
+    """K线偏移信息。"""
+
+    total: int
+    returned: int
+
+
+class BoardListCmd(BaseCommand[list[BoardInfo]]):
+    """查询板块列表。
+
+    Parameters
+    ----------
+    board_type : BoardType
+        板块类型（行业、概念、风格等）。
+    start : int
+        起始偏移量。
+    page_size : int
+        每页数量。
+    """
+
+    def __init__(
+        self,
+        board_type: BoardType = BoardType.ALL,
+        start: int = 0,
+        page_size: int = 150,
+    ) -> None:
+        self._board_type = board_type
+        self._start = start
+        self._page_size = page_size
+
+    def build_request(self) -> bytes:
+        # <HHBBHH8x: page_size, board_type, sort_col(0), sort_order(0), start, flag(1)
+        body = struct.pack(
+            "<HHBBHH8x",
+            self._page_size,
+            int(self._board_type),
+            0,  # sort_column: 0 = rise_speed
+            0,  # sort_order
+            self._start,
+            1,  # flag
+        )
+        return build_mac_request(0x1231, body)
+
+    def parse_response(self, body: bytes) -> list[BoardInfo]:
+        count_all, total = unpack_from("<HH", body, 0, "board_list header")
+        # 服务器返回 count_all = 2 * actual_count（board_info + symbol_info 各一份）
+        count = count_all // 2
+
+        # 板板信息 + 领涨股信息，每组 160 字节
+        # fmt: H(2) + 6s(6) + 16s(16) + 44s(44) + f(4) + f(4) + f(4) = 80
+        # x2 for board + symbol = 160
+        _RECORD_FMT = "<H6s16s44sfffH6s16s44sfff"
+        _RECORD_SIZE = struct.calcsize(_RECORD_FMT)  # 160
+        results: list[BoardInfo] = []
+        for i in range(count):
+            offset = 4 + i * _RECORD_SIZE
+            (
+                market,
+                code_raw,
+                _pad1,
+                name_raw,
+                price,
+                rise_speed,
+                pre_close,
+                symbol_market,
+                symbol_code_raw,
+                _pad2,
+                symbol_name_raw,
+                symbol_price,
+                symbol_rise_speed,
+                symbol_pre_close,
+            ) = unpack_from(_RECORD_FMT, body, offset, f"board_list record[{i}]")
+
+            results.append(
+                BoardInfo(
+                    market=market,
+                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    name=name_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    price=price,
+                    rise_speed=rise_speed,
+                    pre_close=pre_close,
+                    symbol_market=symbol_market,
+                    symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    symbol_price=symbol_price,
+                    symbol_rise_speed=symbol_rise_speed,
+                    symbol_pre_close=symbol_pre_close,
+                )
+            )
+
+        return results
+
+
+class BoardMembersQuotesCmd(BaseCommand[list[MacQuoteField]]):
+    """查询板块成分股报价。
+
+    Parameters
+    ----------
+    board_code : int
+        板块代码（如 int("881001")）。
+    sort_type : SortType
+        排序字段。
+    start : int
+        起始偏移量。
+    page_size : int
+        每页数量。
+    sort_order : SortOrder
+        排序方向。
+    fields : Fields
+        请求的字段集合。
+    exclude_flags : list[FilterType]
+        排除条件列表（如排除科创板、创业板等）。
+    """
+
+    def __init__(
+        self,
+        board_code: int,
+        sort_type: SortType = SortType.CHANGE_PCT,
+        start: int = 0,
+        page_size: int = 80,
+        sort_order: SortOrder = SortOrder.NONE,
+        fields: Fields = PresetField.NONE,
+        exclude_flags: list[FilterType] = None,
+    ) -> None:
+        self._board_code = board_code
+        self._sort_type = sort_type
+        self._start = start
+        self._page_size = page_size
+        self._sort_order = sort_order
+        self._fields = fields
+        self._exclude_flags = exclude_flags or []
+
+    def build_request(self) -> bytes:
+        # I:board_code, 9x padding, H:sort_type, I:start, H:page_size, B:sort_order, B:pad
+        body = struct.pack(
+            "<I9xHIHBB",
+            self._board_code,
+            int(self._sort_type),
+            self._start,
+            self._page_size,
+            int(self._sort_order),
+            0,
+        )
+
+        # 16 字节字段位图
+        bitmap = build_bitmap(self._fields)
+        body += bytes(bitmap[:16])
+
+        # 4 字节控制区: byte0=盘口, byte1=排除位, byte2=日内, byte3=控制(CTRL_EXTENDED=1)
+        b1 = sum(f.value for f in self._exclude_flags)
+        body += struct.pack("<BBBB", 0, b1, 0, 1)
+
+        return build_mac_request(0x122C, body)
+
+    def parse_response(self, body: bytes) -> list[MacQuoteField]:
+        # 响应位图（20 字节）
+        resp_bitmap = body[:20]
+
+        total, row_count = unpack_from("<IH", body, 20, "board_members header")
+
+        active_fields = get_active_fields(resp_bitmap[:16])
+        field_count = len(active_fields)
+
+        # 每行: market(2) + code(22) + name(44) = 68 + field_count * 4
+        row_len = 68 + field_count * 4
+
+        results: list[MacQuoteField] = []
+        for i in range(row_count):
+            row_start = 26 + i * row_len
+            market_raw = unpack_from("<H", body, row_start, f"board_members row[{i}] market")[0]
+            code_raw = body[row_start + 2 : row_start + 24]
+            name_raw = body[row_start + 24 : row_start + 68]
+
+            fields_dict: dict[str, object] = {}
+            for idx, (field_bit, fmt) in enumerate(active_fields):
+                val_bytes = body[row_start + 68 + idx * 4 : row_start + 68 + (idx + 1) * 4]
+                if len(val_bytes) < 4:
+                    break
+                (value,) = struct.unpack(fmt, val_bytes)
+                fields_dict[field_bit.field_name] = value
+
+            results.append(
+                MacQuoteField(
+                    market=market_raw,
+                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    name=name_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    fields=fields_dict,
+                )
+            )
+
+        return results
+
+
+class ChartSamplingCmd(BaseCommand[list[float]]):
+    """获取分时缩略采样价格点。
+
+    返回 240 个 float 价格值（每分钟一个采样点）。
+
+    Args:
+        market: 扩展市场代码（ExMarket 枚举值）。
+        code: 证券代码（GBK 编码）。
+    """
+
+    def __init__(self, market: int, code: str) -> None:
+        self.market = market
+        self.code = code
+
+    def build_request(self) -> bytes:
+        raw_code = self.code.encode("gbk")
+        _CODE_LEN = 22
+        padded = (raw_code + b"\x00" * _CODE_LEN)[:_CODE_LEN]
+        body = struct.pack("<H22sHH9x", self.market, padded, 1, 20)
+        return build_mac_request(0x254D, body)
+
+    def parse_response(self, body: bytes) -> list[float]:
+
+        _RESPONSE_HEADER_SIZE = 42  # H(2) + 22s(22) + 9*H(18) = 42
+        if len(body) < _RESPONSE_HEADER_SIZE:
+            return []
+        require_bytes(body, 0, _RESPONSE_HEADER_SIZE, "ChartSamplingCmd header")
+        (count,) = unpack_from("<H", body, 40, "chart_sampling count")
+        prices: list[float] = []
+        for i in range(count):
+            pos = _RESPONSE_HEADER_SIZE + i * 4
+            require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
+            (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
+            prices.append(p)
+        return prices
+
+
+
+@dataclass(frozen=True)
+class FileMeta:
+    """文件列表查询结果。"""
+
+    offset: int
+    size: int
+    flag: int
+    hash: str
+
+
+class FileListCmd(BaseCommand[FileMeta]):
+    """查询远程文件元信息（大小、哈希等）。
+
+    Args:
+        filename: 远程文件名（GBK 编码）。
+        offset: 文件偏移（默认 0）。
+    """
+
+    def __init__(self, filename: str, offset: int = 0) -> None:
+        self.filename = filename
+        self.offset = offset
+
+    def build_request(self) -> bytes:
+        _FILENAME_PAD = 30
+        raw_name = self.filename.encode("gbk")
+        _FILENAME_LEN = 70
+        padded = (raw_name + b"\x00" * _FILENAME_LEN)[:_FILENAME_LEN]
+        body = struct.pack("<I", self.offset) + padded + b"\x00" * _FILENAME_PAD
+        _FILELIST_MSG_ID = 0x1215
+        return build_mac_request(_FILELIST_MSG_ID, body)
+
+    def parse_response(self, body: bytes) -> FileMeta:
+        require_bytes(body, 0, 4 + 4 + 1 + 32, "FileListCmd")
+        offset, size, flag = unpack_from("<IIb", body, 0, "FileListCmd meta")
+        raw_hash = body[9:41]
+        hash_str = raw_hash.decode("ascii", errors="replace").rstrip("\x00")
+        return FileMeta(offset=offset, size=size, flag=flag, hash=hash_str)
+
+
+class FileDownloadCmd(BaseCommand[bytes]):
+    """分段下载远程文件内容。
+
+    Args:
+        filename: 远程文件名（GBK 编码）。
+        index: 分段序号（1-based）。
+        offset: 字节偏移。
+        size: 请求块大小（默认 30000）。
+    """
+
+    def __init__(
+        self,
+        filename: str,
+        index: int = 1,
+        offset: int = 0,
+        size: int = 30000,
+    ) -> None:
+        self.filename = filename
+        self.index = index
+        self.offset = offset
+        self.size = size
+
+    def build_request(self) -> bytes:
+        raw_name = self.filename.encode("gbk")
+        _FILENAME_LEN = 70
+        _FILENAME_PAD = 30
+        padded = (raw_name + b"\x00" * _FILENAME_LEN)[:_FILENAME_LEN]
+        body = (
+            struct.pack("<III", self.index, self.offset, self.size)
+            + padded
+            + b"\x00" * _FILENAME_PAD
+        )
+        _FILEDL_MSG_ID = 0x1217
+        return build_mac_request(_FILEDL_MSG_ID, body)
+
+    def parse_response(self, body: bytes) -> bytes:
+        if len(body) < 8:
+            return b""
+        return body[8:]
+
+
+@dataclass(frozen=True)
+class GoodsItem:
+    """扩展市场商品信息。"""
+
+    name: str
+    category: int
+    u: int
+    index: int
+    switch: int
+    code: list[float]
+    c1: int
+    c2: int
+
+
+class GoodsListCmd(BaseCommand[list[GoodsItem]]):
+    """获取扩展市场（期货/期权等）商品列表。
+
+    Args:
+        market: 扩展市场代码（ExMarket 枚举值）。
+        start: 起始偏移（默认 0）。
+        count: 请求数量（最大 1000，默认 600）。
+    """
+
+    def __init__(self, market: int, start: int = 0, count: int = 600) -> None:
+        if count > 1000:
+            raise ValueError(f"count 不能超过 1000，当前: {count}")
+        self.market = market
+        self.start = start
+        self.count = count
+        self.total: int = 0
+
+    def build_request(self) -> bytes:
+        body = struct.pack("<HII", self.market, self.start, self.count)
+        return build_mac_request(0x2562, body)
+
+    def parse_response(self, body: bytes) -> list[GoodsItem]:
+        _RECORD_SIZE = 48
+        _RECORD_FMT = "<H23sHIBfffHH"
+        require_bytes(body, 0, 2, "GoodsListCmd header")
+        (total,) = unpack_from("<H", body, 0, "GoodsListCmd total")
+        self.total = total
+        items: list[GoodsItem] = []
+        for i in range(total):
+            offset = 2 + i * _RECORD_SIZE
+            require_bytes(body, offset, _RECORD_SIZE, f"GoodsListCmd record[{i}]")
+            category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(
+                _RECORD_FMT,
+                body,
+                offset,
+                f"GoodsListCmd record[{i}]",
+            )
+            name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
+            items.append(
+                GoodsItem(
+                    name=name,
+                    category=category,
+                    u=u,
+                    index=index,
+                    switch=switch,
+                    code=[v1, v2, v3],
+                    c1=c1,
+                    c2=c2,
+                )
+            )
+        return items
+
+class KlineOffsetCmd(BaseCommand[KlineOffsetInfo]):
+    """查询K线数据偏移。
+
+    Parameters
+    ----------
+    offset : int
+        偏移量（必须为 0）。
+    count : int
+        请求数量。
+    """
+
+    def __init__(self, offset: int = 0, count: int = 128000) -> None:
+        self._offset = offset
+        self._count = count
+
+    def build_request(self) -> bytes:
+        # I:offset, I:count, 5 bytes padding
+        body = struct.pack("<II5x", self._offset, self._count)
+        return build_mac_request(0x124A, body)
+
+    def parse_response(self, body: bytes) -> KlineOffsetInfo:
+        if len(body) < 8:
+            return KlineOffsetInfo(total=0, returned=0)
+
+        # total 字段为大端序!
+        total = struct.unpack(">I", body[:4])[0]
+        returned = struct.unpack("<I", body[4:8])[0]
+
+        return KlineOffsetInfo(total=total, returned=returned)
+
+class ServerInfoCmd(BaseCommand[ServerSession]):
+    """查询服务器交易时段信息。"""
+
+    def build_request(self) -> bytes:
+        # 固定 68 字节请求体
+        header = bytes.fromhex("04002d31")
+        body = header + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52
+        return build_mac_request(0x120F, body)
+
+    def parse_response(self, body: bytes) -> ServerSession:
+        if len(body) < 87:
+            return ServerSession(today="", last_trading_day="")
+
+        pos = 0
+        _count = unpack_from("<H", body, pos, "server_info count")[0]
+        pos += 2
+        # 8 bytes flags
+        pos += 8
+        # 3 bytes tag ("-1")
+        pos += 3
+        # 9 bytes reserved
+        pos += 9
+
+        def _parse_date(p: int) -> tuple[str, int]:
+            d = unpack_from("<I", body, p, "server_info date")[0]
+            return f"{d // 10000}-{d % 10000 // 100:02d}-{d % 100:02d}", p + 4
+
+        def _parse_session(p: int) -> tuple[list[dict[str, object]], int]:
+            vals = unpack_from("<8H", body, p, "server_info session")
+            sessions: list[dict[str, object]] = []
+            for i in range(0, 8, 2):
+                sessions.append(
+                    {
+                        "open": f"{vals[i] // 60}:{vals[i] % 60:02d}",
+                        "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}",
+                    }
+                )
+            return sessions, p + 16
+
+        today, pos = _parse_date(pos)
+        pos += 4  # ts1
+
+        sessions_1, pos = _parse_session(pos)
+        sessions_2, pos = _parse_session(pos)
+
+        pos += 1  # flag byte
+
+        last_trading_day, pos = _parse_date(pos)
+        pos += 4  # ts2
+
+        # Skip remaining fields
+        market_param_1 = 0
+        market_param_2 = 0
+        if pos + 8 <= len(body):
+            market_param_1 = unpack_from("<I", body, pos, "server_info param1")[0]
+            pos += 4
+            market_param_2 = unpack_from("<I", body, pos, "server_info param2")[0]
+
+        return ServerSession(
+            today=today,
+            last_trading_day=last_trading_day,
+            sessions_1=sessions_1,
+            sessions_2=sessions_2,
+            market_param_1=market_param_1,
+            market_param_2=market_param_2,
+        )
+
+class SymbolAuctionCmd(BaseCommand[list[AuctionItem]]):
+    """查询集合竞价数据。
+
+    Parameters
+    ----------
+    market : int
+        市场代码。
+    code : str
+        证券代码。
+    start : int
+        起始偏移量。
+    count : int
+        请求数量。
+    """
+
+    def __init__(self, market: int, code: str, start: int = 0, count: int = 500) -> None:
+        self._market = market
+        self._code = code
+        self._start = start
+        self._count = count
+
+    def build_request(self) -> bytes:
+        # H: market, 22s: code in GBK, I: start, I: count, 10 bytes padding
+        body = struct.pack(
+            "<H22sII10x",
+            self._market,
+            self._code.encode("gbk"),
+            self._start,
+            self._count,
+        )
+        return build_mac_request(0x123D, body)
+
+    def parse_response(self, body: bytes) -> list[AuctionItem]:
+        # 响应头: H:market, 22s:code, I:count, 8 bytes padding (zeros)
+        _market, _code, count = unpack_from("<H22sI", body, 0, "auction header")
+
+        items: list[AuctionItem] = []
+        for i in range(count):
+            offset = 36 + i * 16
+            if offset + 16 > len(body):
+                break
+            time_sec, price, matched, unmatched = unpack_from(
+                "<IfIi", body, offset, f"auction item[{i}]"
+            )
+
+            items.append(
+                AuctionItem(
+                    time=time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60),
+                    price=price,
+                    matched=matched,
+                    unmatched=unmatched,
+                )
+            )
+
+        return items
+
+
+
+def _combine_datetime(ymd: int, time_num: int, is_intraday: bool) -> datetime:
+    """将日期和可选时间组合为 datetime。
+
+    日线及以上周期 time_num 为 0，分时周期 time_num 含 HHMM 信息。
+    """
+    year = ymd // 10000
+    month = (ymd % 10000) // 100
+    day = ymd % 100
+    if is_intraday and time_num:
+        hour = time_num // 3600
+        minute = (time_num % 3600) // 60
+        return datetime(year, month, day, hour, minute)
+    return datetime(year, month, day)
+
+
+class SymbolBarCmd(BaseCommand[list[MacBar]]):
+    """获取单只股票的 K 线数据。
+
+    Args:
+        market: 市场代码。
+        code:   6 位股票代码。
+        period: K 线周期。
+        times:  周期倍数（Period.MINS / Period.DAYS 时有效）。
+        start:  起始偏移（0 = 最新）。
+        count:  返回条数。
+        fq:     复权方式。
+    """
+
+    def __init__(
+        self,
+        market: int,
+        code: str,
+        period: Period = Period.DAILY,
+        times: int = 1,
+        start: int = 0,
+        count: int = 700,
+        fq: Adjust = Adjust.NONE,
+    ) -> None:
+        self._market = market
+        self._code = code
+        self._period = period
+        self._times = times
+        self._start = start
+        self._count = count
+        self._fq = fq
+
+    def build_request(self) -> bytes:
+        body = struct.pack(
+            "<H22sHH I HH bbb bH4s",
+            self._market,
+            self._code.encode("gbk"),
+            self._period,
+            self._times,
+            self._start,
+            self._count,
+            self._fq,
+            1,
+            1,
+            0,
+            1,
+            0,
+            b"",
+        )
+        return build_mac_request(0x122E, body)
+
+    def parse_response(self, body: bytes) -> list[MacBar]:
+        # 头部: market(2) + code(22) + category(2) + flag(1) + count(2) + start(4) = 33
+        (category_flag, _flag, count, start) = unpack_from("<HBHI", body, 24, "symbol_bar header")
+
+        # 防止 count 异常导致越界读取
+        count = min(count, (len(body) - 33) // 36)
+        if count < 0:
+            count = 0
+
+        is_intraday = (
+            self._period < Period.DAILY
+            or self._period == Period.MIN_1
+            or self._period == Period.MINS
+        )
+
+        results: list[MacBar] = []
+        for i in range(count):
+            offset = 33 + i * 36
+            if offset + 36 > len(body):
+                break
+            (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from(
+                "<II7f", body, offset, f"symbol_bar bar[{i}]"
+            )
+            if ymd < 19900101 or ymd > 20991231:
+                continue
+            dt = _combine_datetime(ymd, time_num, is_intraday)
+            results.append(
+                MacBar(
+                    datetime=dt,
+                    open=open_,
+                    high=high,
+                    low=low,
+                    close=close,
+                    vol=vol,
+                    amount=amount,
+                    float_shares=float_shares,
+                )
+            )
+
+        return results
+
+
+def _to_float(value: object) -> float:
+    """Safely convert JSON value to float."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _to_int(value: object) -> int:
+    """Safely convert JSON value to int."""
+    try:
+        return int(float(value))  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return 0
+
+
+class SymbolBelongBoardCmd(BaseCommand[list[BelongBoardInfo]]):
+    """查询个股所属板块。
+
+    Parameters
+    ----------
+    market : int
+        市场代码。
+    code : str
+        证券代码。
+    """
+
+    def __init__(self, market: int, code: str) -> None:
+        self._market = market
+        self._code = code
+
+    def build_request(self) -> bytes:
+        # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_GLHQ"
+        body = struct.pack(
+            "<H8s16x21s",
+            self._market,
+            self._code.encode("gbk"),
+            b"Stock_GLHQ",
+        )
+        # head=1 用于区分 symbol_belong_board 与 symbol_capital_flow (head=2)
+        return build_mac_request(0x1218, body, head_flag=1)
+
+    def parse_response(self, body: bytes) -> list[BelongBoardInfo]:
+        # 响应头: H:market, 12s:query_info, 5x padding, 8s:ext = 27 bytes
+        if len(body) < 27:
+            return []
+
+        json_bytes = body[27:]
+        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk", errors="replace"))
+
+        results: list[BelongBoardInfo] = []
+        if not python_list:
+            return results
+
+        for row in python_list:
+            n = len(row)
+            if n not in (9, 13):
+                continue
+
+            bt = _to_int(row[0])
+            mkt = _to_int(row[1])
+            board_code = str(row[2])
+            board_name = str(row[3])
+            close = _to_float(row[4]) if n > 4 and row[4] else 0.0
+            pre_close = _to_float(row[5]) if n > 5 and row[5] else 0.0
+
+            results.append(
+                BelongBoardInfo(
+                    board_type=bt,
+                    market=mkt,
+                    board_code=board_code,
+                    board_name=board_name,
+                    close=close,
+                    pre_close=pre_close,
+                )
+            )
+
+        return results
+
+
+def _to_float(value: object) -> float:
+    """Safely convert JSON value to float."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return 0.0
+
+
+class SymbolCapitalFlowCmd(BaseCommand[CapitalFlowData]):
+    """查询个股资金流向。
+
+    Parameters
+    ----------
+    market : int
+        市场代码。
+    code : str
+        证券代码。
+    """
+
+    def __init__(self, market: int, code: str) -> None:
+        self._market = market
+        self._code = code
+
+    def build_request(self) -> bytes:
+        # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_ZJLX"
+        body = struct.pack(
+            "<H8s16x21s",
+            self._market,
+            self._code.encode("gbk"),
+            b"Stock_ZJLX",
+        )
+        # head=2 用于区分 symbol_capital_flow 与 symbol_belong_board (head=1)
+        _HEAD_FLAG = 2
+        return build_mac_request(0x1218, body, head_flag=_HEAD_FLAG)
+
+    def parse_response(self, body: bytes) -> CapitalFlowData:
+        # 响应头: H:market, 12s:query_info, 5x padding, 8s:ext = 27 bytes
+        if len(body) < 27:
+            return None
+
+        json_bytes = body[27:]
+        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk"))
+
+        if len(python_list) < 2:
+            return None
+
+        today_data = python_list[0]
+        five_days_data = python_list[1]
+
+        # today_data: [main_in, main_out, retail_in, retail_out]
+        # five_days_data: [buy_5d, sell_5d, super_large, large, mid, small]
+        main_in = _to_float(today_data[0]) if len(today_data) > 0 else 0.0
+        main_out = _to_float(today_data[1]) if len(today_data) > 1 else 0.0
+        retail_in = _to_float(today_data[2]) if len(today_data) > 2 else 0.0
+        retail_out = _to_float(today_data[3]) if len(today_data) > 3 else 0.0
+
+        mid_net_5d = _to_float(five_days_data[4]) if len(five_days_data) > 4 else 0.0
+        large_net_5d = _to_float(five_days_data[3]) if len(five_days_data) > 3 else 0.0
+
+        return CapitalFlowData(
+            date="",
+            main_in=main_in,
+            main_out=main_out,
+            main_net=main_in - main_out,
+            small_in=retail_in,
+            small_out=retail_out,
+            small_net=retail_in - retail_out,
+            mid_in=0.0,
+            mid_out=0.0,
+            mid_net=mid_net_5d,
+            large_in=0.0,
+            large_out=0.0,
+            large_net=large_net_5d,
+        )
+
+
+class SymbolInfoCmd(BaseCommand[MacSymbolInfo]):
+    """获取个股简要特征。
+
+    Args:
+        market: 市场代码。
+        code:   6 位股票代码。
+    """
+
+    def __init__(self, market: int, code: str) -> None:
+        self._market = market
+        self._code = code
+
+    def build_request(self) -> bytes:
+        body = struct.pack("<H22sI12x", self._market, self._code.encode("gbk"), 1)
+        return build_mac_request(0x122A, body)
+
+    def parse_response(self, body: bytes) -> MacSymbolInfo:
+        # data[0:8]  padding (zeros)
+        # data[8:74] market(2) + code(22) + name(44)
+        (market, code_raw, name_raw) = unpack_from("<H22s44s", body, 8, "symbol_info identity")
+
+        # data[76:96] padding (zeros)
+        # data[96:..] core fields
+        (
+            date_raw,
+            time_raw,
+            activity,
+            pre_close,
+            open,
+            high,
+            low,
+            close,
+            momentum,
+            vol,
+            amount,
+            inside_volume,
+            outside_volume,
+        ) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
+
+        # data[148:..]
+        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from(
+            "<HIf20xI3f", body, 148, "symbol_info extra"
+        )
+
+        dt = datetime(
+            date_raw // 10000,
+            (date_raw % 10000) // 100,
+            date_raw % 100,
+            time_raw // 10000,
+            (time_raw % 10000) // 100,
+            time_raw % 100,
+        )
+
+        return MacSymbolInfo(
+            market=market,
+            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            time=dt,
+            activity=activity,
+            pre_close=pre_close,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            momentum=momentum,
+            vol=int(vol),
+            amount=amount,
+            inside_volume=inside_volume,
+            outside_volume=outside_volume,
+            turnover=turnover,
+            avg=avg,
+        )
+
+
+class SymbolQuotesCmd(BaseCommand[list[MacQuoteField]]):
+    """批量获取自定义字段报价。
+
+    Args:
+        stocks: [(market, code), ...] 列表。
+        fields: 字段选择，默认 PresetField.COMMON。
+    """
+
+    def __init__(self, stocks: list[tuple[int, str]], fields: Fields = None) -> None:
+        if not stocks:
+            raise ValueError("stocks 不能为空")
+        self._stocks = stocks
+        # 默认不请求任何字段时使用 COMMON 需要导入 PresetField，
+        # 这里延迟导入避免循环。
+        if fields is None:
+            fields = PresetField.COMMON
+        self._fields = fields
+        self._bitmap = bytes(build_bitmap(fields))
+
+    def build_request(self) -> bytes:
+        body = bytearray(self._bitmap)
+        body += struct.pack("<H", len(self._stocks))
+        for market, code in self._stocks:
+            body += struct.pack("<H22s", market, code.encode("gbk"))
+        return build_mac_request(0x122B, bytes(body))
+
+    def parse_response(self, body: bytes) -> list[MacQuoteField]:
+        pos = 0
+        field_bitmap = body[pos : pos + 20]
+        pos += 20
+
+        (total_stocks, row_count) = unpack_from("<IH", body, pos, "symbol_quotes header")
+        pos += 6
+
+        active = get_active_fields(field_bitmap[:16])
+        field_count = len(active)
+        row_len = 68 + 4 * field_count
+
+        results: list[MacQuoteField] = []
+        for _ in range(row_count):
+            row_end = pos + row_len
+            if row_end > len(body):
+                break
+            row_data = body[pos:row_end]
+            pos = row_end
+
+            (market, code_raw, name_raw) = unpack_from("<H22s44s", row_data, 0, "symbol_quotes row")
+            code = code_raw.decode("gbk", errors="ignore").replace("\x00", "")
+            name = name_raw.decode("gbk", errors="ignore").replace("\x00", "")
+
+            fields_dict: dict[str, Any] = {}
+            if field_count:
+                for idx, (field_bit, fmt) in enumerate(active):
+                    value_bytes = row_data[68 + idx * 4 : 68 + (idx + 1) * 4]
+                    (value,) = struct.unpack(fmt, value_bytes)
+
+                    # 后处理钩子
+                    post_fn = FIELD_POSTPROCESS.get(field_bit.value)
+                    if post_fn is not None:
+                        value = post_fn(value, market)  # type: ignore[operator]
+
+                    fields_dict[field_bit.field_name] = value
+
+            results.append(
+                MacQuoteField(
+                    market=market,
+                    code=code,
+                    name=name,
+                    fields=fields_dict,
+                )
+            )
+
+        return results
+
+
+class SymbolTickChartCmd(BaseCommand[MacTickChart]):
+    """获取单日分时图。
+
+    Args:
+        market:    市场代码。
+        code:      6 位股票代码。
+        query_date: 查询日期（None 或 date(0,0,0) 表示今天）。
+    """
+
+    def __init__(
+        self,
+        market: int,
+        code: str,
+        query_date: date = None,
+    ) -> None:
+        self._market = market
+        self._code = code
+        if query_date is not None:
+            self._ymd = query_date.year * 10000 + query_date.month * 100 + query_date.day
+        else:
+            self._ymd = 0
+
+    def build_request(self) -> bytes:
+        body = struct.pack(
+            "<H22sI5H",
+            self._market,
+            self._code.encode("gbk"),
+            self._ymd,
+            1,
+            0,
+            0,
+            0,
+            0,
+        )
+        return build_mac_request(0x122D, body)
+
+    def parse_response(self, body: bytes) -> MacTickChart:
+        # 头部: market(2) + code(22) + query_date(4) + reserved(1) + ref_price(4) + count(2)
+        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from(
+            "<H22sIBfH", body, 0, "tick_chart header"
+        )
+
+        ticks: list[MacTick] = []
+        for i in range(count):
+            offset = 35 + i * 18
+            (minutes, price, avg, vol, momentum) = unpack_from(
+                "<HffIf", body, offset, f"tick_chart tick[{i}]"
+            )
+            ticks.append(
+                MacTick(
+                    time=time(minutes // 60 % 24, minutes % 60),
+                    price=price,
+                    avg=avg,
+                    vol=vol,
+                    momentum=momentum,
+                )
+            )
+
+        # 尾部元数据
+        tail_offset = 35 + count * 18
+        (
+            name_raw,
+            _decimal,
+            _category,
+            _vol_unit,
+            _date_raw,
+            _time_raw,
+            pre_close,
+            open,
+            high,
+            low,
+            close,
+            _momentum_tail,
+            vol,
+            amount,
+            _tail_pad2,
+            turnover,
+            avg_tail,
+            _industry,
+        ) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
+
+        return MacTickChart(
+            market=market,
+            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            pre_close=pre_close,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            vol=int(vol),
+            amount=amount,
+            turnover=turnover,
+            avg=avg_tail,
+            charts=ticks,
+        )
+
+
+class SymbolTransactionCmd(BaseCommand[list[MacTransaction]]):
+    """获取逐笔成交数据。
+
+    Args:
+        market:     市场代码。
+        code:       6 位股票代码。
+        query_date: 查询日期（None 表示今天）。
+        start:      起始偏移。
+        count:      返回条数。
+    """
+
+    def __init__(
+        self,
+        market: int,
+        code: str,
+        query_date: date = None,
+        start: int = 0,
+        count: int = 1000,
+    ) -> None:
+        self._market = market
+        self._code = code
+        if query_date is not None:
+            self._ymd = query_date.year * 10000 + query_date.month * 100 + query_date.day
+        else:
+            self._ymd = 0
+        self._start = start
+        self._count = count
+
+    def build_request(self) -> bytes:
+        body = struct.pack(
+            "<H22sIIH10x",
+            self._market,
+            self._code.encode("gbk"),
+            self._ymd,
+            self._start,
+            self._count,
+        )
+        return build_mac_request(0x122F, body)
+
+    def parse_response(self, body: bytes) -> list[MacTransaction]:
+        # 头部: market(2) + code(22) + query_date(4) + flag(1) + count(2) + start(4) + total(4) = 39
+        (count,) = unpack_from("<H", body, 29, "transaction count")
+
+        results: list[MacTransaction] = []
+        for i in range(count):
+            offset = 39 + i * 18
+            (time_sec, price, volume, trade_count, bs_flag) = unpack_from(
+                "<IfIIH", body, offset, f"transaction item[{i}]"
+            )
+            results.append(
+                MacTransaction(
+                    time=time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60),
+                    price=price,
+                    vol=volume,
+                    trade_count=trade_count,
+                    bs_flag=bs_flag,
+                )
+            )
+
+        return results
+
+
+class TickChartsCmd(BaseCommand[MacMultiTickChart]):
+    """获取多日分时图。
+
+    Args:
+        market:     市场代码。
+        code:       6 位股票代码。
+        start_date: 起始日期（None 表示从最新交易日开始）。
+        days:       天数（最多 5）。
+    """
+
+    def __init__(
+        self,
+        market: int,
+        code: str,
+        start_date: date = None,
+        days: int = 5,
+    ) -> None:
+        self._market = market
+        self._code = code
+        if start_date is not None:
+            self._start_ymd = start_date.year * 10000 + start_date.month * 100 + start_date.day
+        else:
+            self._start_ymd = 0
+        self._days = days
+
+    def build_request(self) -> bytes:
+        body = struct.pack(
+            "<H22sIHH6x",
+            self._market,
+            self._code.encode("gbk"),
+            self._start_ymd,
+            self._days,
+            1,
+        )
+        return build_mac_request(0x123E, body)
+
+    def parse_response(self, body: bytes) -> MacMultiTickChart:
+        # 头部
+        (market, code_raw) = unpack_from("<H22s", body, 0, "tick_charts header")
+
+        # 每日日期(5 x I) + 每日前收(5 x f) = 40 bytes
+        date_ints = unpack_from("<5I", body, 24, "tick_charts dates")
+        pre_close_floats = unpack_from("<5f", body, 44, "tick_charts pre_closes")
+
+        # count(2) + send_last(1) + page_size(2) + total(2)
+        (count, send_last, page_size, total) = unpack_from("<HBHH", body, 64, "tick_charts header2")
+
+        days: list[MacMultiTickDay] = []
+        for d in range(count):
+            ticks: list[MacTick] = []
+            for t in range(page_size):
+                index = d * page_size + t
+                offset = 71 + index * 14
+                (minutes, price, avg, vol, tick_reserved) = unpack_from(
+                    "<HffHH", body, offset, f"tick_charts tick[{d}][{t}]"
+                )
+                ticks.append(
+                    MacTick(
+                        time=time(minutes // 60, minutes % 60),
+                        price=price,
+                        avg=avg,
+                        vol=vol,
+                    )
+                )
+
+            ymd = date_ints[d]
+            day_date = date(ymd // 10000, (ymd % 10000) // 100, ymd % 100)
+            days.append(
+                MacMultiTickDay(
+                    date=day_date,
+                    pre_close=pre_close_floats[d],
+                    ticks=ticks,
+                )
+            )
+
+        # 尾部元数据
+        tail_offset = 71 + count * page_size * 14
+        (
+            name_raw,
+            _decimal,
+            _category,
+            _vol_unit,
+            _date_raw,
+            _time_raw,
+            pre_close,
+            open,
+            high,
+            low,
+            close,
+            _momentum,
+            vol,
+            amount,
+            _tail_pad2,
+            turnover,
+            avg,
+            _industry,
+        ) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_charts tail")
+
+        return MacMultiTickChart(
+            market=market,
+            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+            pre_close=pre_close,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            vol=int(vol),
+            amount=amount,
+            turnover=turnover,
+            avg=avg,
+            charts=days,
+        )
+
+def _describe_unusual(unusual_type: int, data: bytes) -> tuple[str, str]:
+    """根据异动类型解析描述和数值。"""
+    if len(data) < 13:
+        return "", ""
+    v1, v2, v3, v4 = struct.unpack_from("<B2fI", data)
+
+    if unusual_type == 0x03:
+        desc = f"主力{'买入' if v1 == 0x00 else '卖出'}"
+        val = f"{v2:.2f}/{v3:.2f}"
+    elif unusual_type == 0x04:
+        desc = "加速拉升"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x05:
+        desc = "加速下跌"
+        val = ""
+    elif unusual_type == 0x06:
+        desc = "低位反弹"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x07:
+        desc = "高位回落"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x08:
+        desc = "撑杆跳高"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x09:
+        desc = "平台跳水"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x0A:
+        desc = f"单笔冲{'跌' if v2 < 0 else '涨'}"
+        val = f"{v2 * 100:.2f}%"
+    elif unusual_type == 0x0B:
+        direction = "平" if v3 == 0 else "跌" if v3 < 0 else "涨"
+        desc = f"区间放量{direction}"
+        val = f"{v2:.1f}倍" + ("" if v3 == 0 else f"{v3 * 100:.2f}%")
+    elif unusual_type == 0x0C:
+        desc = "区间缩量"
+        val = ""
+    elif unusual_type == 0x10:
+        desc = "大单托盘"
+        val = f"{v4:.2f}/{v3:.2f}"
+    elif unusual_type == 0x11:
+        desc = "大单压盘"
+        val = f"{v2:.2f}/{v3:.2f}"
+    elif unusual_type == 0x12:
+        desc = "大单锁盘"
+        val = ""
+    elif unusual_type == 0x13:
+        desc = "竞价试买"
+        val = f"{v2:.2f}/{v3:.2f}"
+    elif unusual_type == 0x14:
+        direction = "涨" if v1 == 0x00 else "跌"
+        if len(data) >= 10:
+            sub_type, v2_alt, v3_alt = struct.unpack_from("<Bff", data, 1)
+        else:
+            sub_type, v2_alt, v3_alt = 0, 0.0, 0.0
+        if sub_type == 0x01:
+            desc = f"逼近{direction}停"
+        elif sub_type == 0x02:
+            desc = f"封{direction}停板"
+        elif sub_type == 0x04:
+            desc = f"封{direction}大减"
+        elif sub_type == 0x05:
+            desc = f"打开{direction}停"
+        else:
+            desc = f"涨跌停({direction})"
+        val = f"{v2_alt:.2f}/{v3_alt:.2f}"
+    else:
+        desc = f"异动类型{unusual_type:#04x}"
+        val = ""
+
+    return desc, val
+
+
+class UnusualCmd(BaseCommand[list[UnusualItem]]):
+    """查询异动数据。
+
+    Parameters
+    ----------
+    market : int
+        市场代码。
+    start : int
+        起始偏移量。
+    count : int
+        请求数量（最大 600）。
+    """
+
+    def __init__(self, market: int, start: int = 0, count: int = 600) -> None:
+        self._market = market
+        self._start = start
+        self._count = min(count, 600)
+
+    def build_request(self) -> bytes:
+        # H:market, H:start, 2x padding, H:count, 2x padding, 5×H monitoring params
+        body = struct.pack(
+            "<HH2xH2xH5H",
+            self._market,
+            self._start,
+            self._count,
+            1,  # monitor param 1
+            200,  # monitor param 2
+            30,  # monitor param 3
+            40,  # monitor param 4
+            50,  # monitor param 5
+            200,  # monitor param 6
+        )
+        return build_mac_request(0x1237, body)
+
+    def parse_response(self, body: bytes) -> list[UnusualItem]:
+        (count,) = unpack_from("<H", body, 0, "unusual count")
+
+        results: list[UnusualItem] = []
+        for i in range(count):
+            offset = 2 + i * 32
+            if offset + 32 > len(body):
+                break
+
+            market, code_raw, _, unusual_type, _, index, _z = unpack_from(
+                "<H6sBBBHH", body, offset, f"unusual record[{i}]"
+            )
+
+            desc, value = _describe_unusual(unusual_type, body[offset + 15 : offset + 28])
+
+            hour, minute_sec = unpack_from("<BH", body, offset + 29, f"unusual time[{i}]")
+
+            results.append(
+                UnusualItem(
+                    index=index,
+                    market=market,
+                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                    name="",  # populated below from text section
+                    time=time(hour, minute_sec // 100, minute_sec % 100),
+                    desc=desc,
+                    value=value,
+                    unusual_type=unusual_type,
+                )
+            )
+
+        # Text section: stock names in GBK, comma-separated
+        binary_length = 2 + count * 32
+        text_bytes = body[binary_length:]
+        text_list = text_bytes.decode("gbk", errors="ignore").strip(",").split(",")
+
+        # Fill names from text section
+        populated: list[UnusualItem] = []
+        for i, item in enumerate(results):
+            name = text_list[i] if i < len(text_list) else ""
+            populated.append(
+                UnusualItem(
+                    index=item.index,
+                    market=item.market,
+                    code=item.code,
+                    name=name,
+                    time=item.time,
+                    desc=item.desc,
+                    value=item.value,
+                    unusual_type=item.unusual_type,
+                )
+            )
+
+        return populated
 
 def _convert_board_code(board_symbol: str) -> int:
     """将用户可见的板块代码转换为服务器协议代码。
@@ -642,7 +2410,6 @@ class MacClient:
                 down_count      下跌家数
                 members         成分股明细 DataFrame
         """
-        from ..codec.bitmap import FieldBit, PresetField
 
         fields = (
             PresetField.BASIC
@@ -1476,7 +3243,6 @@ class AsyncMacClient:
                 down_count      下跌家数
                 members         成分股明细 DataFrame
         """
-        from ..codec.bitmap import FieldBit, PresetField
 
         fields = (
             PresetField.BASIC
