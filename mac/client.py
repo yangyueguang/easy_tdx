@@ -401,13 +401,10 @@ class MacClient:
             adjust: 复权方式（默认前复权）。
             params: 可选指标参数覆盖。
         """
-        from ..indicator import compute_indicators
 
         fetch_count = max(120 + count, 200)
         df = self.get_stock_kline(market, code, period=period, count=fetch_count, adjust=adjust)
-        if df.empty:
-            return df
-        return compute_indicators(df, indicators, params, tail=count)
+        return df
 
     # ------------------------------------------------------------------ #
     # 分时
@@ -1289,8 +1286,6 @@ class AsyncMacClient:
 
         自动获取足够的历史数据用于指标预热（EMA 至少需要 120 周期）。
         """
-        from ..indicator import compute_indicators
-
         fetch_count = max(120 + count, 200)
         df = await self.get_stock_kline(
             market,
@@ -1299,9 +1294,7 @@ class AsyncMacClient:
             count=fetch_count,
             adjust=adjust,
         )
-        if df.empty:
-            return df
-        return compute_indicators(df, indicators, params, tail=count)
+        return df
 
     # ------------------------------------------------------------------ #
     # 分时

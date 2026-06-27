@@ -373,7 +373,7 @@ easy-tdx backtest SZ 000001 \
 Python API：
 
 ```python
-from easy_tdx.backtest import CombinationRunner
+from backtest import CombinationRunner
 
 runner = CombinationRunner(
     strategy_classes=[MACDStrategy, RSIStrategy, BollingerStrategy],
@@ -531,7 +531,7 @@ python -X utf8 run_all_strategies.py SH 600519 --count 2000 --cash 1000000 --adj
 编写自定义策略只需继承 `Strategy` 基类：
 
 ```python
-from easy_tdx.backtest import Strategy
+from backtest import Strategy
 from easy_tdx import MyTT
 
 
@@ -553,11 +553,11 @@ class MyStrategy(Strategy):
 新增三大模块：**因子引擎**（19 个内置因子 + 自定义扩展）、**因子分析**（IC/分层/衰减）、**组合管理**（4 种优化器 + 再平衡引擎）。加上**高级回测增强**：可插拔滑点模型（方根冲击/成交量比例）、执行仿真（TWAP/VWAP/限价单）、归因分析（Brinson + 因子归因）。
 
 ```python
-from easy_tdx.factor import FactorEngine, FactorAnalyzer, preprocess
-from easy_tdx.portfolio import RebalanceEngine, FactorWeightedOptimizer
-from easy_tdx.backtest import BacktestEngine
-from easy_tdx.backtest.slippage import SquareRootSlippage
-from easy_tdx.backtest.execution import TWAPExecution
+from factor import FactorEngine, FactorAnalyzer, preprocess
+from portfolio import RebalanceEngine, FactorWeightedOptimizer
+from backtest import BacktestEngine
+from backtest.slippage import SquareRootSlippage
+from backtest.execution import TWAPExecution
 
 # 因子研究
 engine = FactorEngine()
@@ -739,7 +739,6 @@ easy-tdx screen strength --universe sz --top 30 --output sz_strength.json
 | `--names` | 在线补齐股票名称（默认关闭） |
 | `--output` | 输出 JSON 文件（默认 stdout） |
 
-> ⚠️ **数据时效**：strength 依赖本地 `.day` 文件。输出中的 `data_date` / `last_date` 字段标注数据截止日，请先用 `easy-tdx offline sync` 同步最新数据。
 
 ### 捉妖大师（重点）
 
@@ -845,30 +844,6 @@ easy-tdx ex tick HK_MAIN_BOARD 00700 --table               # 港股分时
 ```
 
 ### 离线数据（读取 + 写入同步）
-
-从本地通达信安装目录直接读取数据文件，无需网络连接：
-
-```bash
-easy-tdx offline home                                # 检测通达信安装目录
-easy-tdx offline daily SH 600000 --count 10 --table  # A 股日线
-easy-tdx offline min SZ 000001 --type lc5 --table    # 分钟线（5min/lc1/lc5）
-easy-tdx offline ex-files --table                    # 列出扩展市场可用文件
-easy-tdx offline ex-daily 38#2_CPI --count 5 --table # 扩展市场日线（期货/港股/外盘）
-easy-tdx offline gbbq C:\new_jyplug\T0002\hq_cache\gbbq --table        # 股本变迁
-easy-tdx offline financial C:\new_jyplug\vipdoc\fin\gpcw20260331.dat    # 历史财务
-easy-tdx offline blocks C:\new_jyplug\T0002\blocknew --table            # 自定义板块
-```
-
-从服务端获取最新日线并写入本地 .day 文件，替代通达信内置下载功能：
-
-```bash
-# 同步单只股票日线（自动增量/全量）
-easy-tdx offline sync-daily SZ 000001
-easy-tdx offline sync-daily SH 600519 --vipdoc C:\new_jyplug\vipdoc
-
-# 一键同步沪深全市场（每天一条命令）
-easy-tdx offline sync-all
-```
 
 > 建议在通达信关闭时执行 sync 命令，避免文件被锁定。空文件自动全量下载，已有数据只做增量追加。
 
@@ -1028,7 +1003,7 @@ ws.send(JSON.stringify({action: "subscribe", symbol: "SH600000"}));
 ### 编程 API
 
 ```python
-from easy_tdx.web import create_app
+from web import create_app
 import uvicorn
 
 app = create_app(host="119.147.212.81", port=7709)
@@ -1076,16 +1051,6 @@ uvicorn.run(app, host="0.0.0.0", port=8000)
 | `ex quote-list` | 扩展市场商品列表 |
 | `ex tick` | 扩展市场分时 |
 | `ex markets` | 列出可用扩展市场 |
-| `offline home` | 检测通达信安装目录 |
-| `offline daily` | A 股日线（本地 .day 文件） |
-| `offline sync-daily` | 从服务端同步单只股票日线到本地 .day 文件 |
-| `offline sync-all` | 一键同步沪深全市场日线（扫描本地 .day 文件） |
-| `offline min` | 分钟线（本地 .5/.lc1/.lc5 文件） |
-| `offline ex-files` | 列出扩展市场可用文件 |
-| `offline ex-daily` | 扩展市场日线（期货/港股/外盘） |
-| `offline gbbq` | 股本变迁数据 |
-| `offline financial` | 历史财务数据 |
-| `offline blocks` | 自定义板块数据 |
 
 ## Python API
 
@@ -1148,7 +1113,7 @@ with MacClient.from_best_host() as c:
 
 ```python
 from easy_tdx import MacClient, Market, Period, Adjust
-from easy_tdx.indicator import compute_indicators, list_indicators
+from indicator import compute_indicators, list_indicators
 
 with MacClient.from_best_host() as c:
     # 便捷方法：获取 K 线 + 计算指标一步完成（默认前复权）
@@ -1356,58 +1321,12 @@ df = c.get_security_quotes([(Market.SH, "600000")])
 is_suspended = df.iloc[0]["trading_status"] == 0x8020
 ```
 
-### 离线数据读取
-
-无需网络，从本地通达信安装目录直接读取：
-
-```python
-from easy_tdx.offline import detect_tdx_home, read_daily_bars, find_daily_bar_file
-from easy_tdx import Market
-
-home = detect_tdx_home()
-filepath = find_daily_bar_file(Market.SH, "600000")
-bars = read_daily_bars(filepath)
-```
-
-支持：日线、分钟线、扩展市场日线、板块、股本变迁、历史财务数据。
-
-### 离线数据写入同步
-
-从服务端获取最新数据并追加写入本地通达信数据文件：
-
-```python
-from easy_tdx.offline import (
-    encode_daily_bar, append_daily_bars, get_last_bar_date,
-    encode_5min_bar, append_5min_bars,
-    encode_lc_min_bar, append_lc_min_bars,
-)
-from easy_tdx import Market
-from easy_tdx.client import TdxClient
-
-# 追加日线到 .day 文件（自动跳过重复日期）
-from easy_tdx.offline import sync_daily_bars_from_security_bars
-
-# 手动编码单条记录
-bar_bytes = encode_daily_bar(bar, price_coeff=0.01, vol_coeff=0.01)
-
-# 获取文件末尾日期
-last_date = get_last_bar_date("C:/new_jyplug/vipdoc/sh/lday/sh600000.day")
-```
-
-v1.5.0 起可通过 CLI 直接使用：
-
-```bash
-easy-tdx offline daily SH 600000 --count 10 --table
-easy-tdx offline ex-files --table
-easy-tdx offline ex-daily 29#A1801 --table
-```
-
 ### 缠论分析
 
 基于缠论理论的技术分析模块，接收 easy_tdx 的 K 线 DataFrame，输出笔、中枢、线段、买卖点、背驰等分析结果：
 
 ```python
-from easy_tdx.chanlun import ChanlunAnalyser, ChanlunConfig
+from chanlun import ChanlunAnalyser, ChanlunConfig
 
 # 使用 easy_tdx 获取 K 线数据
 with TdxClient() as client:
@@ -1434,7 +1353,7 @@ print(result.to_dict())
 标准库 urllib 实现，零额外依赖。
 
 ```python
-from easy_tdx.cninfo import CninfoClient
+from cninfo import CninfoClient
 
 client = CninfoClient()
 
@@ -1480,7 +1399,7 @@ for _, row in df.iterrows():
 标准库 urllib 实现，零额外依赖。
 
 ```python
-from easy_tdx.sina import SinaClient
+from sina import SinaClient
 
 client = SinaClient()
 
@@ -1679,7 +1598,6 @@ src/easy_tdx/
 ├── realtime/          # 实时数据推送框架（EventBus/事件驱动/asyncio）
 ├── web/               # Web API（FastAPI REST + WebSocket）
 ├── models/            # 纯 dataclass，无业务逻辑
-├── offline/           # 离线数据读写模块（读取 + 写入同步）
 └── cli/               # easy-tdx CLI（click）
 ```
 

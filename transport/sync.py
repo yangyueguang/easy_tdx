@@ -26,7 +26,7 @@ T = TypeVar("T")
 _DEFAULT_HEARTBEAT_INTERVAL = 15.0
 _MAX_CONSECUTIVE_HEARTBEATS = 20
 
-# 模块级别名，供外部 `from easy_tdx.transport.sync import KNOWN_HOSTS` 使用。
+# 模块级别名，供外部 `from transport.sync import KNOWN_HOSTS` 使用。
 # 在 import 时从配置读取一次；用户修改 config.json 后需重启生效。
 KNOWN_HOSTS = get_known_hosts()
 CALC_HOSTS = get_calc_hosts()

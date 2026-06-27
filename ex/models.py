@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from ..config import get_ex_hosts, get_mac_ex_hosts
 
-# 模块级别名，供外部 `from easy_tdx.ex.models import KNOWN_EX_HOSTS` 使用。
+# 模块级别名，供外部 `from ex.models import KNOWN_EX_HOSTS` 使用。
 KNOWN_EX_HOSTS = get_ex_hosts()
 
 # 已知扩展行情市场代码
