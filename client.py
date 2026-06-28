@@ -54,6 +54,27 @@ config = {
 }
 
 
+class Dot(dict):
+    def __init__(self, seq=None, **kwargs):
+        if not isinstance(seq, dict):
+            seq = {'value': seq}
+        super(Dot, self).__init__(seq, **kwargs)
+
+    def __getattr__(self, attr):
+        res = self.get(attr)
+        if isinstance(res, dict):
+            return Dot(res)
+        return res
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
+
+    def __call__(self, keypath: str, *args, **kwargs):
+        temp = self
+        for i in keypath.split('.'):
+            temp = temp[int(i) if i.isnumeric() else i]
+        return temp
+
+
 class Period(IntEnum):
     """K线周期。"""
 
@@ -3214,19 +3235,10 @@ class SymbolInfoCmd(BaseCommand):
         return build_mac_request(0x122A, body)
 
     def parse_response(self, body: bytes) -> MacSymbolInfo:
-        # data[0:8]  padding (zeros)
-        # data[8:74] market(2) + code(22) + name(44)
         (market, code_raw, name_raw) = unpack_from("<H22s44s", body, 8, "symbol_info identity")
-
-        # data[76:96] padding (zeros)
-        # data[96:..] core fields
         (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume, outside_volume) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
-
-        # data[148:..]
         (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from("<HIf20xI3f", body, 148, "symbol_info extra")
-
         dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000, (time_raw % 10000) // 100, time_raw % 100)
-
         return MacSymbolInfo(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), time=dt, activity=activity, pre_close=pre_close, open=open, high=high, low=low, close=close, momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume, outside_volume=outside_volume, turnover=turnover, avg=avg)
 
 
@@ -4872,7 +4884,7 @@ class TdxClient:
                     return self._conn.execute(cmd)
                 except Exception as e:
                     last_exc = e
-            raise last_exc  # type: ignore[misc]
+            raise last_exc
 
     def get_security_count(self, market: Market) -> int:
         """获取市场证券总数。"""
@@ -5472,24 +5484,8 @@ class MacExClient:
         result: list[MacQuoteField] = self._execute(cmd)
         return _quotes_to_df(result)
 
-    def goods_quotes_list(self, market: int, start: int = 0, count: int = 100, sort_type: SortType = SortType.CODE, sort_order: SortOrder = SortOrder.NONE) -> pd.DataFrame:
-        """获取扩展市场排序报价列表（通过 GoodsList + Quotes 组合）。
-
-        先获取商品列表，再批量查询报价。
-
-        Parameters
-        ----------
-        market : int
-            ExMarket 枚举值。
-        start : int
-            起始偏移。
-        count : int
-            返回条数（最大 80，受报价批量限制）。
-        sort_type : SortType
-            排序字段（暂未实现排序，预留接口）。
-        sort_order : SortOrder
-            排序方向（暂未实现排序，预留接口）。
-        """
+    def goods_quotes_list(self, market: ExMarket, start: int = 0, count: int = 80) -> pd.DataFrame:
+        """获取扩展市场排序报价列表（通过 GoodsList + Quotes 组合） 先获取商品列表，再批量查询报价 """
         page_size = min(count, 80)
         items_df = self.goods_list(market, start=start, count=page_size)
         if items_df.empty:
@@ -5523,32 +5519,14 @@ class MacExClient:
         result = self._execute(cmd)
         return _to_df(result)
 
-    def goods_tick_chart(self, market: int, code: str, query_date=None) -> pd.DataFrame:
-        """获取单日分时图。
-
-        Parameters
-        ----------
-        market : int
-            ExMarket 枚举值。
-        code : str
-            证券代码。
-        query_date : date
-            查询日期，None 表示今天。
-        """
+    def goods_tick_chart(self, market: ExMarket, code: str, query_date=None) -> pd.DataFrame:
+        """获取单日分时图 """
         cmd = SymbolTickChartCmd(market=market, code=code, query_date=query_date)
         result = self._execute(cmd)
         return _to_df(result)
 
     def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
-        """获取分时缩略采样价格点（约 240 个点）。
-
-        Parameters
-        ----------
-        market : int
-            ExMarket 枚举值。
-        code : str
-            证券代码。
-        """
+        """获取分时缩略采样价格点（约 240 个点） """
         cmd = ChartSamplingCmd(market=market, code=code)
         prices: list[float] = self._execute(cmd)
         if not prices:
