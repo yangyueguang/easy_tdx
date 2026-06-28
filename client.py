@@ -827,7 +827,6 @@ class TransactionRecord:
 
 class FieldSelection:
     """字段选择器，支持 PresetField + FieldBit 组合。
-
     Usage:
         PresetField.BASIC + FieldBit.AH_CODE
         PresetField.BASIC | FieldBit.INDUSTRY
@@ -1235,44 +1234,9 @@ class ExTransactionRecord:
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
 
-def get_best_host() -> str:
-    return config.get("best_host")
-
-
-def get_best_ex_host() -> str:
-    """返回当前最佳扩展行情主机。"""
-    return config.get("best_ex_host")
-
-
-def get_port() -> int:
-    """返回默认端口。"""
-    return config.get("port", 7709)
-
-
-def get_timeout() -> float:
-    """返回默认超时秒数。"""
-    return config.get("timeout", 15)
-
-
-def save_best_host(host: str):
-    """保存最佳主机到配置文件；首次写入时同时补全默认配置。"""
-
-
-def save_best_ex_host(host: str):
-    """保存最佳扩展行情主机到配置文件。"""
-
-
-def save_best_mac_ex_host(host: str):
-    """保存最佳 MAC 协议扩展行情主机到配置文件。"""
-
-
 def ping_host(host: str, port: int = None, timeout: float = 5.0) -> float:
-    """测量连接到指定服务器并完成握手所需的时间（秒）。
-
-    返回延迟（秒），连接失败时返回 None。
-    """
     if port is None:
-        port = get_port()
+        port = config.get("port", 7709)
     t0 = time.monotonic()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
@@ -1298,14 +1262,10 @@ def ping_host(host: str, port: int = None, timeout: float = 5.0) -> float:
 
 
 def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
-    """并发测量多台服务器延迟，返回按延迟排序的 (host, latency_seconds) 列表。
-
-    不可达的服务器不包含在结果中。
-    """
     if hosts is None:
         hosts = config.get("known_hosts")
     if port is None:
-        port = get_port()
+        port = config.get("port", 7709)
 
     results: list[tuple[str, float]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(hosts)) as pool:
@@ -3968,9 +3928,9 @@ class MacExLoginCmd(BaseCommand):
 
 class TdxConnection:
     def __init__(self, host: str = None, port: int = None, timeout: float = None):
-        self.host = host if host is not None else get_best_host()
-        self.port = port if port is not None else get_port()
-        self.timeout = timeout if timeout is not None else get_timeout()
+        self.host = host if host is not None else config.get("best_host")
+        self.port = port if port is not None else config.get("port", 7709)
+        self.timeout = timeout if timeout is not None else config.get("timeout", 15)
         self._sock: socket.socket = None
         self._lock = threading.Lock()
         self._heartbeat_interval: float = 0  # 0 = disabled
@@ -4107,6 +4067,73 @@ class TdxConnection:
         return _recv_exact_sock(self._sock, n)
 
 
+class ExTdxConnection:
+    """扩展行情同步 TCP 连接（端口 7727，单包握手）。
+
+    Parameters
+    ----------
+    mac_ex_mode : bool
+        为 True 时自动将 MAC 命令的 head_flag 从 0x1C 转为 0x01，
+        以兼容 MAC EX 服务器（需要 head_flag=0x01）。
+    """
+
+    def __init__(self, host: str = None, port: int = 7727, timeout: float = 15, *, mac_ex_mode: bool = False):
+        self.host = host if host is not None else config.get("best_ex_host")
+        self.port = port
+        self.timeout = timeout
+        self.mac_ex_mode = mac_ex_mode
+        self._sock: socket.socket = None
+        self._lock = threading.Lock()
+
+    def connect(self):
+        """建立 TCP 连接。扩展行情服务器不需要握手命令。"""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self.timeout)
+        try:
+            sock.connect((self.host, self.port))
+        except OSError as e:
+            sock.close()
+            raise Exception(f"无法连接 {self.host}:{self.port}: {e}") from e
+        self._sock = sock
+
+    def close(self):
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None
+
+    def execute(self, cmd: "BaseCommand"):
+        """执行一条命令：发送请求，接收并解压响应，返回解析结果。"""
+        with self._lock:
+            if self._sock is None:
+                raise Exception("未连接，请先调用 connect()")
+            request = cmd.build_request()
+            if self.mac_ex_mode and len(request) > 0 and request[0] == 0x1C:
+                request = b"\x01" + request[1:]
+            try:
+                self._sock.sendall(request)
+                header_buf = self._recv_exact(HEADER_SIZE)
+                header = parse_header(header_buf)
+                raw_body = self._recv_exact(header.zipsize)
+            except OSError as e:
+                raise Exception(f"通信错误: {e}") from e
+            body = decompress_body(header, raw_body)
+            return cmd.parse_response(body)
+
+    def __enter__(self) -> "ExTdxConnection":
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
+        self.close()
+
+    def _recv_exact(self, n: int) -> bytes:
+        assert self._sock is not None
+        return _recv_exact_sock(self._sock, n)
+
+
 class MacClient:
     """同步 MAC 协议客户端，支持 IP 优选与断线自动重连。
 
@@ -4121,9 +4148,9 @@ class MacClient:
     """
 
     def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 15.0):
-        self._host = host if host is not None else get_best_host()
-        self._port = port if port is not None else get_port()
-        self._timeout = timeout if timeout is not None else get_timeout()
+        self._host = host if host is not None else config.get("best_host")
+        self._port = port if port is not None else config.get("port", 7709)
+        self._timeout = timeout if timeout is not None else config.get("timeout", 15)
         self._auto_reconnect = auto_reconnect
         self._heartbeat_interval = heartbeat_interval
         self._conn = TdxConnection(self._host, self._port, self._timeout)
@@ -4134,12 +4161,12 @@ class MacClient:
         if hosts is None:
             hosts = config.get("mac_hosts")
         if port is None:
-            port = get_port()
+            port = config.get("port", 7709)
         if timeout is None:
-            timeout = get_timeout()
+            timeout = config.get("timeout", 15)
         ranked = ping_mac_all(hosts, port, ping_timeout)
         best = ranked[0][0] if ranked else hosts[0]
-        save_best_host(best)
+        config['best_host'] = best
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
@@ -4148,7 +4175,7 @@ class MacClient:
         if hosts is None:
             hosts = config.get("mac_hosts")
         if port is None:
-            port = get_port()
+            port = config.get("port", 7709)
         return ping_mac_all(hosts, port, timeout)
 
     def connect(self):
@@ -4760,9 +4787,9 @@ class MacClient:
 
 class TdxClient:
     def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 15.0):
-        self._host = host if host is not None else get_best_host()
-        self._port = port if port is not None else get_port()
-        self._timeout = timeout if timeout is not None else get_timeout()
+        self._host = host if host is not None else config.get("best_host")
+        self._port = port if port is not None else config.get("port", 7709)
+        self._timeout = timeout if timeout is not None else config.get("timeout", 15)
         self._auto_reconnect = auto_reconnect
         self._heartbeat_interval = heartbeat_interval
         self._conn = TdxConnection(host, port, timeout)
@@ -4777,12 +4804,12 @@ class TdxClient:
         if hosts is None:
             hosts = config.get("known_hosts")
         if port is None:
-            port = get_port()
+            port = config.get("port", 7709)
         if timeout is None:
-            timeout = get_timeout()
+            timeout = config.get("timeout", 15)
         ranked = ping_all(hosts, port, ping_timeout)
         best = ranked[0][0] if ranked else hosts[0]
-        save_best_host(best)
+        config['best_host'] = best
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
@@ -4791,7 +4818,7 @@ class TdxClient:
         if hosts is None:
             hosts = config.get("known_hosts")
         if port is None:
-            port = get_port()
+            port = config.get("port", 7709)
         return ping_all(hosts, port, timeout)
 
     def connect(self):
@@ -5186,85 +5213,9 @@ class TdxClient:
         return _to_df(results)
 
 
-class ExTdxConnection:
-    """扩展行情同步 TCP 连接（端口 7727，单包握手）。
-
-    Parameters
-    ----------
-    mac_ex_mode : bool
-        为 True 时自动将 MAC 命令的 head_flag 从 0x1C 转为 0x01，
-        以兼容 MAC EX 服务器（需要 head_flag=0x01）。
-    """
-
-    def __init__(self, host: str = None, port: int = 7727, timeout: float = 15, *, mac_ex_mode: bool = False):
-        self.host = host if host is not None else get_best_ex_host()
-        self.port = port
-        self.timeout = timeout
-        self.mac_ex_mode = mac_ex_mode
-        self._sock: socket.socket = None
-        self._lock = threading.Lock()
-
-    def connect(self):
-        """建立 TCP 连接。扩展行情服务器不需要握手命令。"""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
-        try:
-            sock.connect((self.host, self.port))
-        except OSError as e:
-            sock.close()
-            raise Exception(f"无法连接 {self.host}:{self.port}: {e}") from e
-        self._sock = sock
-
-    def close(self):
-        if self._sock is not None:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
-
-    def execute(self, cmd: "BaseCommand"):
-        """执行一条命令：发送请求，接收并解压响应，返回解析结果。"""
-        with self._lock:
-            if self._sock is None:
-                raise Exception("未连接，请先调用 connect()")
-            request = cmd.build_request()
-            if self.mac_ex_mode and len(request) > 0 and request[0] == 0x1C:
-                request = b"\x01" + request[1:]
-            try:
-                self._sock.sendall(request)
-                header_buf = self._recv_exact(HEADER_SIZE)
-                header = parse_header(header_buf)
-                raw_body = self._recv_exact(header.zipsize)
-            except OSError as e:
-                raise Exception(f"通信错误: {e}") from e
-            body = decompress_body(header, raw_body)
-            return cmd.parse_response(body)
-
-    def __enter__(self) -> "ExTdxConnection":
-        self.connect()
-        return self
-
-    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
-        self.close()
-
-    def _recv_exact(self, n: int) -> bytes:
-        assert self._sock is not None
-        return _recv_exact_sock(self._sock, n)
-
-
 class ExTdxClient:
-    """同步扩展行情客户端（期货、港股、外股等，端口 7727）。
-
-    使用示例::
-
-        with ExTdxClient("61.152.107.141") as c:
-            markets = c.get_markets()
-            quote = c.get_instrument_quote(47, "IFL0")
-    """
-
     def __init__(self, host: str = None, port: int = 7727, timeout: float = 15.0, auto_reconnect: bool = True):
-        self._host = host if host is not None else get_best_ex_host()
+        self._host = host if host is not None else config.get("best_ex_host")
         self._port = port
         self._timeout = timeout
         self._auto_reconnect = auto_reconnect
@@ -5276,16 +5227,12 @@ class ExTdxClient:
         hosts = hosts or config.get("ex_hosts")
         ranked = ping_ex_all(hosts, port, ping_timeout)
         best = ranked[0][0] if ranked else hosts[0]
-        save_best_ex_host(best)
+        config['best_ex_host'] = best
         return cls(best, port, timeout, auto_reconnect)
 
     @staticmethod
     def ping_all(hosts: list[str] = None, port: int = 7727, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts, port, timeout)
-
-    # ------------------------------------------------------------------ #
-    # 连接管理
-    # ------------------------------------------------------------------ #
 
     def connect(self):
         self._conn.connect()
@@ -5311,10 +5258,6 @@ class ExTdxClient:
             self._conn.connect()
             return self._conn.execute(cmd)
 
-    # ------------------------------------------------------------------ #
-    # 市场信息
-    # ------------------------------------------------------------------ #
-
     def get_markets(self) -> list[ExMarketInfo]:
         """获取扩展行情支持的市场列表。"""
         return self._execute(GetExMarketsCmd())
@@ -5327,10 +5270,6 @@ class ExTdxClient:
         """获取商品信息列表（分页）。"""
         return self._execute(GetExInstrumentInfoCmd(start, count))
 
-    # ------------------------------------------------------------------ #
-    # 行情
-    # ------------------------------------------------------------------ #
-
     def get_instrument_quote(self, market: int, code: str) -> ExInstrumentQuote:
         """获取单个商品五档实时行情。"""
         return self._execute(GetExInstrumentQuoteCmd(market, code))
@@ -5338,10 +5277,6 @@ class ExTdxClient:
     def get_instrument_quote_list(self, market: int, category: int, start: int = 0, count: int = 80) -> list[OrderedDict[str, object]]:
         """按类别获取商品行情列表。"""
         return self._execute(GetExInstrumentQuoteListCmd(market, category, start, count))
-
-    # ------------------------------------------------------------------ #
-    # K线
-    # ------------------------------------------------------------------ #
 
     def get_instrument_bars(self, category: int, market: int, code: str, start: int = 0, count: int = 700) -> list[ExInstrumentBar]:
         """获取K线数据。"""
@@ -5351,10 +5286,6 @@ class ExTdxClient:
         """按日期范围获取历史K线。"""
         return self._execute(GetExHistoryInstrumentBarsRangeCmd(market, code, start_date, end_date))
 
-    # ------------------------------------------------------------------ #
-    # 分时
-    # ------------------------------------------------------------------ #
-
     def get_minute_time_data(self, market: int, code: str) -> list[ExMinuteBar]:
         """获取当日分时行情数据。"""
         return self._execute(GetExMinuteTimeDataCmd(market, code))
@@ -5362,10 +5293,6 @@ class ExTdxClient:
     def get_history_minute_time_data(self, market: int, code: str, date: int) -> list[ExMinuteBar]:
         """获取历史某日分时行情数据（date: YYYYMMDD）。"""
         return self._execute(GetExHistoryMinuteTimeDataCmd(market, code, date))
-
-    # ------------------------------------------------------------------ #
-    # 成交
-    # ------------------------------------------------------------------ #
 
     def get_transaction_data(self, market: int, code: str, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         """获取当日分笔成交数据。"""
@@ -5378,9 +5305,6 @@ class ExTdxClient:
 
 class MacExClient:
     """同步 MAC 协议扩展市场客户端（期货/港股/美股，端口 7727）。
-
-    使用示例::
-
         with MacExClient() as c:
             df = c.goods_kline(ExMarket.CFFEX_FUTURES, "IFL0", Period.DAILY)
             df = c.goods_quotes([(ExMarket.HK_MAIN_BOARD, "00700")])
@@ -5399,16 +5323,12 @@ class MacExClient:
         candidates = hosts or config["mac_ex_hosts"]
         ranked = ping_ex_all(candidates, port, ping_timeout)
         best = ranked[0][0] if ranked else candidates[0]
-        save_best_mac_ex_host(best)
+        config['best_mac_ex_host'] = best
         return cls(best, port, timeout, auto_reconnect)
 
     @staticmethod
     def ping_all(hosts: list[str] = None, port: int = 7727, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts or config["mac_ex_hosts"], port, timeout)
-
-    # ------------------------------------------------------------------ #
-    # 连接管理
-    # ------------------------------------------------------------------ #
 
     def connect(self):
         self._conn.connect()
@@ -5452,10 +5372,6 @@ class MacExClient:
             self._conn.connect()
             self._login()
             return self._conn.execute(cmd)
-
-    # ------------------------------------------------------------------ #
-    # 商品列表
-    # ------------------------------------------------------------------ #
 
     def goods_count(self, market: int = None) -> int:
         """获取商品总数。market=None 时返回全市场总数，否则返回指定市场的数量。"""
@@ -5543,10 +5459,6 @@ class MacExClient:
                 hi = mid
         return lo
 
-    # ------------------------------------------------------------------ #
-    # 行情
-    # ------------------------------------------------------------------ #
-
     def goods_quotes(self, stocks: list[tuple[int, str]], fields=None) -> pd.DataFrame:
         """批量获取扩展市场自定义字段报价。
 
@@ -5611,11 +5523,7 @@ class MacExClient:
         result = self._execute(cmd)
         return _to_df(result)
 
-    # ------------------------------------------------------------------ #
-    # 分时
-    # ------------------------------------------------------------------ #
-
-    def goods_tick_chart(self, market: int, code: str, query_date = None) -> pd.DataFrame:
+    def goods_tick_chart(self, market: int, code: str, query_date=None) -> pd.DataFrame:
         """获取单日分时图。
 
         Parameters
@@ -5647,11 +5555,7 @@ class MacExClient:
             return pd.DataFrame()
         return pd.DataFrame({"price": prices})
 
-    # ------------------------------------------------------------------ #
-    # 成交
-    # ------------------------------------------------------------------ #
-
-    def goods_transaction(self, market: int, code: str, query_date = None, start: int = 0, count: int = 2000) -> pd.DataFrame:
+    def goods_transaction(self, market: int, code: str, query_date=None, start: int = 0, count: int = 2000) -> pd.DataFrame:
         """获取逐笔成交数据。
 
         Parameters
