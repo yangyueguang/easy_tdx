@@ -1037,10 +1037,9 @@ with MacClient.from_best_host() as c:
 
 | 客户端 | 端口 | 覆盖范围 |
 |--------|------|----------|
-| `MacClient` / `AsyncMacClient` | 7709 | A 股行情（MAC 协议，推荐） |
-| `MacExClient` / `AsyncMacExClient` | 7727 | 港股/美股/期货（MAC 协议） |
-| `UnifiedTdxClient` / `AsyncUnifiedTdxClient` | 自动 | A 股 + 扩展市场统一入口 |
-| `TdxClient` / `AsyncTdxClient` | 7709 | A 股行情（标准协议） |
+| `MacClient` | 7709 | A 股行情（MAC 协议，推荐） |
+| `MacExClient` | 7727 | 港股/美股/期货（MAC 协议） |
+| `TdxClient` | 7709 | A 股行情（标准协议） |
 
 ### MAC 协议（推荐）
 
@@ -1253,8 +1252,6 @@ with TdxClient.from_best_host() as c:
     stat = c.get_market_stat()
 ```
 
-`AsyncTdxClient` 提供对应的 `async def` 方法，接口一一对应。
-
 ### SecurityQuote 字段说明
 
 `get_security_quotes()` 返回的 DataFrame 包含以下特殊字段：
@@ -1457,7 +1454,7 @@ df = client.get_financial_report("600519", report_type="llb", num=4)
 
 ## 完整 API 列表
 
-### MacClient / AsyncMacClient
+### MacClient 
 
 | 方法 | 说明 |
 |------|------|
@@ -1483,7 +1480,7 @@ df = client.get_financial_report("600519", report_type="llb", num=4)
 | `get_kline_offset(offset, count)` | K 线偏移信息 |
 | `get_goods_list(market, ...)` | 扩展市场商品列表 |
 
-### MacExClient / AsyncMacExClient
+### MacExClient 
 
 | 方法 | 说明 |
 |------|------|
@@ -1496,7 +1493,7 @@ df = client.get_financial_report("600519", report_type="llb", num=4)
 | `goods_chart_sampling(market, code)` | 分时缩略采样 |
 | `goods_transaction(market, code, ...)` | 逐笔成交 |
 
-### TdxClient / AsyncTdxClient
+### TdxClient
 
 | 方法 | 说明 |
 |------|------|
@@ -1525,23 +1522,22 @@ df = client.get_financial_report("600519", report_type="llb", num=4)
 
 ```
 src/easy_tdx/
-├── client.py          # TdxClient / AsyncTdxClient（标准协议）
+├── client.py          # TdxClient（标准协议）
 ├── unified.py         # UnifiedTdxClient（统一入口）
 ├── config.py          # 服务器地址、端口、超时配置
 ├── indicator.py       # 技术指标计算（34 个，基于 MyTT）
 ├── MyTT.py            # 麦语言技术指标算法库
 ├── mac/
-│   ├── client.py      # MacClient / AsyncMacClient（MAC 协议）
+│   ├── client.py      # MacClient （MAC 协议）
 │   ├── enums.py       # Period, Adjust, Category, ExMarket, SortType, ...
 │   ├── models.py      # MacBar, MacQuoteField, MacTick, BoardInfo, ...
 │   └── commands/      # MAC 命令（build_request + parse_response，无 IO）
 ├── ex/
-│   ├── client.py      # ExTdxClient / AsyncExTdxClient（标准协议扩展市场）
-│   ├── mac_client.py  # MacExClient / AsyncMacExClient（MAC 协议扩展市场）
+│   ├── client.py      # ExTdxClient（标准协议扩展市场）
+│   ├── mac_client.py  # MacExClient（MAC 协议扩展市场）
 │   └── transport/     # ExTdxConnection（端口 7727）
 ├── transport/
 │   ├── sync.py        # TdxConnection + ping_host / ping_all
-│   └── async_.py      # AsyncTdxConnection（asyncio）
 ├── commands/          # 标准协议命令（无 IO）
 ├── codec/             # price / volume / datetime / frame / bitmap 编解码
 ├── chanlun/           # 缠论技术分析（K线合并/分型/笔/线段/中枢/买卖点/背驰）
