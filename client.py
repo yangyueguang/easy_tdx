@@ -12,8 +12,8 @@ import time
 from types import TracebackType
 from collections import OrderedDict
 import logging
-from datetime import date, datetime, time
-from collections.abc import Awaitable, Callable, Iterable, Iterator
+from datetime import date, datetime
+from collections.abc import Callable, Iterable, Iterator
 from zoneinfo import ZoneInfo
 import concurrent.futures
 from datetime import date as date_cls
@@ -21,7 +21,6 @@ import io
 import re
 import zipfile
 import zlib
-from dataclasses import dataclass
 import concurrent.futures
 from enum import Enum, IntEnum
 HEADER_SIZE: int = 16
@@ -43,6 +42,37 @@ _MAC_VERSION = 1
 _CACHE_DIR = Path.home() / ".easy_tdx" / "cache"
 _CACHE_MAX_AGE = 86400  # 1 天
 
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+# 从 pytdx 源码原文复制，去除空格
+SETUP_CMD1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
+SETUP_CMD2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
+SETUP_CMD3: Final[bytes] = bytes.fromhex("0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002")
+
+SETUP_COMMANDS: Final[tuple[bytes, ...]] = (SETUP_CMD1, SETUP_CMD2, SETUP_CMD3)
+_RECORD_SIZE = 29
+_FIN_FMT = "<fHHII" + "f" * 30
+_FIN_SIZE = struct.calcsize(_FIN_FMT)
+
+_CONFIG_DIR = Path(os.environ.get("EASY_TDX_CONFIG_DIR", str(Path.home() / ".easy_tdx")))
+_CONFIG_FILE = _CONFIG_DIR / "config.json"
+_FALLBACK_HOSTS: list[str] = [
+    "111.229.247.189", "150.158.160.2", "180.153.18.170", "124.71.187.122", "180.153.18.171", "180.153.18.172", "119.147.212.81", "115.238.56.198", "115.238.90.165", "218.75.126.9", "47.107.75.159", "59.175.238.38", "110.41.147.114", "110.41.2.72", "101.33.225.16", "175.178.112.197", "175.178.128.227", "43.139.95.83", "124.223.163.242", "122.51.120.217", "123.60.164.122", "124.70.199.56", "62.234.50.143", "81.70.151.186", "82.156.214.79", "159.75.29.111", "43.139.18.171", "81.71.32.47", "122.51.232.182", "118.25.98.114", "121.36.225.169", "123.60.70.228", "123.60.73.44", "124.70.133.119", "124.71.187.72", "119.97.185.59", "129.204.230.128", "101.42.240.54", "124.71.9.153", "123.60.84.66", "111.230.186.52", "101.43.159.194", "120.53.8.251", "152.136.191.169", "116.205.163.254", "116.205.171.132", "116.205.183.150", "49.232.15.141", "82.156.174.84", "101.42.164.241", "101.35.121.35", "111.231.113.208", ]
+
+_FALLBACK_CALC_HOSTS: list[str] = [
+    "120.76.152.87", ]
+
+_FALLBACK_MAC_HOSTS: list[str] = [
+    "121.36.248.138", "123.60.47.136", "121.37.207.165", ]
+
+_FALLBACK_EX_HOSTS: list[str] = [
+    "112.74.214.43", "120.25.218.6", "43.139.173.246", "159.75.90.107", "106.52.170.195", "139.9.191.175", "175.24.47.69", "150.158.9.199", "150.158.20.127", "49.235.119.116", "49.234.13.160", "116.205.143.214", "124.71.223.19", "113.45.175.47", "123.60.173.210", "118.89.69.202", ]
+
+_FALLBACK_MAC_EX_HOSTS: list[str] = [
+    "116.205.135.205", "121.37.232.167", ]
+
+_FALLBACK_PORT = 7709
+_FALLBACK_TIMEOUT = 15.0
+
 EX_SETUP_CMD: Final[bytes] = bytes.fromhex("01 01 48 65 00 01 52 00 52 00 54 24"
     "1f 32 c6 e5 d5 3d fb 41"
     "1f 32 c6 e5 d5 3d fb 41"
@@ -57,6 +87,22 @@ EX_SETUP_CMD: Final[bytes] = bytes.fromhex("01 01 48 65 00 01 52 00 52 00 54 24"
 
 XDXR_CATEGORY_NAMES: dict[int, str] = {
     1: "除权除息", 2: "送配股上市", 3: "非流通股上市", 4: "未知股本变动", 5: "股本变化", 6: "增发新股", 7: "股份回购", 8: "增发新股上市", 9: "转配股上市", 10: "可转债上市", 11: "扩缩股", 12: "非流通股缩股", 13: "送认购权证", 14: "送认沽权证", }
+
+
+def _load() -> dict[str, Any]:
+    try:
+        if _CONFIG_FILE.exists():
+            return cast(dict[str, Any], json.loads(_CONFIG_FILE.read_text("utf-8")))
+    except Exception:
+        pass
+    return {}
+
+
+def _save(data: dict[str, Any]):
+    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _CONFIG_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+    tmp.replace(_CONFIG_FILE)
 
 
 def get_mac_ex_hosts() -> list[str]:
@@ -787,54 +833,6 @@ class FrameHeader:
     zipsize: int
     unzipsize: int
 
-
-_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-_DAILY_PLUS = frozenset({KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
-# 从 pytdx 源码原文复制，去除空格
-SETUP_CMD1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
-SETUP_CMD2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
-SETUP_CMD3: Final[bytes] = bytes.fromhex("0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002")
-
-SETUP_COMMANDS: Final[tuple[bytes, ...]] = (SETUP_CMD1, SETUP_CMD2, SETUP_CMD3)
-_RECORD_SIZE = 29
-_FIN_FMT = "<fHHII" + "f" * 30
-_FIN_SIZE = struct.calcsize(_FIN_FMT)
-
-_CONFIG_DIR = Path(os.environ.get("EASY_TDX_CONFIG_DIR", str(Path.home() / ".easy_tdx")))
-_CONFIG_FILE = _CONFIG_DIR / "config.json"
-_FALLBACK_HOSTS: list[str] = [
-    "111.229.247.189", "150.158.160.2", "180.153.18.170", "124.71.187.122", "180.153.18.171", "180.153.18.172", "119.147.212.81", "115.238.56.198", "115.238.90.165", "218.75.126.9", "47.107.75.159", "59.175.238.38", "110.41.147.114", "110.41.2.72", "101.33.225.16", "175.178.112.197", "175.178.128.227", "43.139.95.83", "124.223.163.242", "122.51.120.217", "123.60.164.122", "124.70.199.56", "62.234.50.143", "81.70.151.186", "82.156.214.79", "159.75.29.111", "43.139.18.171", "81.71.32.47", "122.51.232.182", "118.25.98.114", "121.36.225.169", "123.60.70.228", "123.60.73.44", "124.70.133.119", "124.71.187.72", "119.97.185.59", "129.204.230.128", "101.42.240.54", "124.71.9.153", "123.60.84.66", "111.230.186.52", "101.43.159.194", "120.53.8.251", "152.136.191.169", "116.205.163.254", "116.205.171.132", "116.205.183.150", "49.232.15.141", "82.156.174.84", "101.42.164.241", "101.35.121.35", "111.231.113.208", ]
-
-_FALLBACK_CALC_HOSTS: list[str] = [
-    "120.76.152.87", ]
-
-_FALLBACK_MAC_HOSTS: list[str] = [
-    "121.36.248.138", "123.60.47.136", "121.37.207.165", ]
-
-_FALLBACK_EX_HOSTS: list[str] = [
-    "112.74.214.43", "120.25.218.6", "43.139.173.246", "159.75.90.107", "106.52.170.195", "139.9.191.175", "175.24.47.69", "150.158.9.199", "150.158.20.127", "49.235.119.116", "49.234.13.160", "116.205.143.214", "124.71.223.19", "113.45.175.47", "123.60.173.210", "118.89.69.202", ]
-
-_FALLBACK_MAC_EX_HOSTS: list[str] = [
-    "116.205.135.205", "121.37.232.167", ]
-
-_FALLBACK_PORT = 7709
-_FALLBACK_TIMEOUT = 15.0
-
-
-def _load() -> dict[str, Any]:
-    try:
-        if _CONFIG_FILE.exists():
-            return cast(dict[str, Any], json.loads(_CONFIG_FILE.read_text("utf-8")))
-    except Exception:
-        pass
-    return {}
-
-
-def _save(data: dict[str, Any]):
-    _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _CONFIG_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
-    tmp.replace(_CONFIG_FILE)
 
 
 def get_best_host() -> str:
@@ -3054,11 +3052,15 @@ class TdxClient:
     def get_security_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         """获取 K 线数据（最多800条/次，按 start 分页）。"""
         df = _to_df(self._execute(GetSecurityBarsCmd(market, code, category, start, count)))
+        _DAILY_PLUS = frozenset(
+            {KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
     def get_index_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         """获取指数 K 线数据。"""
         df = _to_df(self._execute(GetIndexBarsCmd(market, code, category, start, count)))
+        _DAILY_PLUS = frozenset(
+            {KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
     # ------------------------------------------------------------------ #
@@ -6163,3 +6165,24 @@ class MacExClient:
         result = self._execute(cmd)
         return _to_df(result)
 
+
+if __name__ == '__main__':
+    with MacClient.from_best_host() as c:
+        # 批量报价（最多 80 只/次）
+        df = c.get_stock_quotes([(Market.SH, "600519"), (Market.SZ, "000858")])
+        # 市场分类排序报价
+        df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
+        print('over')
+
+    with TdxClient.from_best_host() as c:
+        count = c.get_security_count(Market.SH)
+        stocks = c.get_security_list(Market.SH, start=0)
+        quotes = c.get_security_quotes([(Market.SH, "600000"), (Market.SZ, "000001")])
+        bars = c.get_security_bars(Market.SZ, "002176", KlineCategory.DAY, 0, 100)
+        minute = c.get_minute_time_data(Market.SH, "600000")
+        trades = c.get_transaction_data(Market.SH, "600000", 0, 20)
+        flow = c.get_fund_flow(Market.SH, "600519")
+        blocks = c.get_block_info("block_gn.dat")
+        xdxr = c.get_xdxr_info(Market.SH, "600519")
+        stat = c.get_market_stat()
+        print('over')
