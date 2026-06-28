@@ -461,27 +461,16 @@ class BoardListCmd(BaseCommand[list[BoardInfo]]):
         每页数量。
     """
 
-    def __init__(
-        self,
-        board_type: BoardType = BoardType.ALL,
-        start: int = 0,
-        page_size: int = 150,
-    ) -> None:
+    def __init__(self, board_type: BoardType = BoardType.ALL, start: int = 0, page_size: int = 150):
         self._board_type = board_type
         self._start = start
         self._page_size = page_size
 
     def build_request(self) -> bytes:
         # <HHBBHH8x: page_size, board_type, sort_col(0), sort_order(0), start, flag(1)
-        body = struct.pack(
-            "<HHBBHH8x",
-            self._page_size,
-            int(self._board_type),
-            0,  # sort_column: 0 = rise_speed
+        body = struct.pack("<HHBBHH8x", self._page_size, int(self._board_type), 0,  # sort_column: 0 = rise_speed
             0,  # sort_order
-            self._start,
-            1,  # flag
-        )
+            self._start, 1,  # flag)
         return build_mac_request(0x1231, body)
 
     def parse_response(self, body: bytes) -> list[BoardInfo]:
@@ -497,39 +486,9 @@ class BoardListCmd(BaseCommand[list[BoardInfo]]):
         results: list[BoardInfo] = []
         for i in range(count):
             offset = 4 + i * _RECORD_SIZE
-            (
-                market,
-                code_raw,
-                _pad1,
-                name_raw,
-                price,
-                rise_speed,
-                pre_close,
-                symbol_market,
-                symbol_code_raw,
-                _pad2,
-                symbol_name_raw,
-                symbol_price,
-                symbol_rise_speed,
-                symbol_pre_close,
-            ) = unpack_from(_RECORD_FMT, body, offset, f"board_list record[{i}]")
+            (market, code_raw, _pad1, name_raw, price, rise_speed, pre_close, symbol_market, symbol_code_raw, _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = unpack_from(_RECORD_FMT, body, offset, f"board_list record[{i}]")
 
-            results.append(
-                BoardInfo(
-                    market=market,
-                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    name=name_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    price=price,
-                    rise_speed=rise_speed,
-                    pre_close=pre_close,
-                    symbol_market=symbol_market,
-                    symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    symbol_price=symbol_price,
-                    symbol_rise_speed=symbol_rise_speed,
-                    symbol_pre_close=symbol_pre_close,
-                )
-            )
+            results.append(BoardInfo(market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), price=price, rise_speed=rise_speed, pre_close=pre_close, symbol_market=symbol_market, symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"), symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"), symbol_price=symbol_price, symbol_rise_speed=symbol_rise_speed, symbol_pre_close=symbol_pre_close))
 
         return results
 
@@ -555,16 +514,7 @@ class BoardMembersQuotesCmd(BaseCommand[list[MacQuoteField]]):
         排除条件列表（如排除科创板、创业板等）。
     """
 
-    def __init__(
-        self,
-        board_code: int,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        start: int = 0,
-        page_size: int = 80,
-        sort_order: SortOrder = SortOrder.NONE,
-        fields: Fields = PresetField.NONE,
-        exclude_flags: list[FilterType] = None,
-    ) -> None:
+    def __init__(self, board_code: int, sort_type: SortType = SortType.CHANGE_PCT, start: int = 0, page_size: int = 80, sort_order: SortOrder = SortOrder.NONE, fields: Fields = PresetField.NONE, exclude_flags: list[FilterType] = None):
         self._board_code = board_code
         self._sort_type = sort_type
         self._start = start
@@ -575,15 +525,7 @@ class BoardMembersQuotesCmd(BaseCommand[list[MacQuoteField]]):
 
     def build_request(self) -> bytes:
         # I:board_code, 9x padding, H:sort_type, I:start, H:page_size, B:sort_order, B:pad
-        body = struct.pack(
-            "<I9xHIHBB",
-            self._board_code,
-            int(self._sort_type),
-            self._start,
-            self._page_size,
-            int(self._sort_order),
-            0,
-        )
+        body = struct.pack("<I9xHIHBB", self._board_code, int(self._sort_type), self._start, self._page_size, int(self._sort_order), 0)
 
         # 16 字节字段位图
         bitmap = build_bitmap(self._fields)
@@ -622,14 +564,7 @@ class BoardMembersQuotesCmd(BaseCommand[list[MacQuoteField]]):
                 (value,) = struct.unpack(fmt, val_bytes)
                 fields_dict[field_bit.field_name] = value
 
-            results.append(
-                MacQuoteField(
-                    market=market_raw,
-                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    name=name_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    fields=fields_dict,
-                )
-            )
+            results.append(MacQuoteField(market=market_raw, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), fields=fields_dict))
 
         return results
 
@@ -644,7 +579,7 @@ class ChartSamplingCmd(BaseCommand[list[float]]):
         code: 证券代码（GBK 编码）。
     """
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self.market = market
         self.code = code
 
@@ -690,7 +625,7 @@ class FileListCmd(BaseCommand[FileMeta]):
         offset: 文件偏移（默认 0）。
     """
 
-    def __init__(self, filename: str, offset: int = 0) -> None:
+    def __init__(self, filename: str, offset: int = 0):
         self.filename = filename
         self.offset = offset
 
@@ -721,13 +656,7 @@ class FileDownloadCmd(BaseCommand[bytes]):
         size: 请求块大小（默认 30000）。
     """
 
-    def __init__(
-        self,
-        filename: str,
-        index: int = 1,
-        offset: int = 0,
-        size: int = 30000,
-    ) -> None:
+    def __init__(self, filename: str, index: int = 1, offset: int = 0, size: int = 30000):
         self.filename = filename
         self.index = index
         self.offset = offset
@@ -738,11 +667,9 @@ class FileDownloadCmd(BaseCommand[bytes]):
         _FILENAME_LEN = 70
         _FILENAME_PAD = 30
         padded = (raw_name + b"\x00" * _FILENAME_LEN)[:_FILENAME_LEN]
-        body = (
-            struct.pack("<III", self.index, self.offset, self.size)
+        body = (struct.pack("<III", self.index, self.offset, self.size)
             + padded
-            + b"\x00" * _FILENAME_PAD
-        )
+            + b"\x00" * _FILENAME_PAD)
         _FILEDL_MSG_ID = 0x1217
         return build_mac_request(_FILEDL_MSG_ID, body)
 
@@ -775,7 +702,7 @@ class GoodsListCmd(BaseCommand[list[GoodsItem]]):
         count: 请求数量（最大 1000，默认 600）。
     """
 
-    def __init__(self, market: int, start: int = 0, count: int = 600) -> None:
+    def __init__(self, market: int, start: int = 0, count: int = 600):
         if count > 1000:
             raise ValueError(f"count 不能超过 1000，当前: {count}")
         self.market = market
@@ -797,25 +724,9 @@ class GoodsListCmd(BaseCommand[list[GoodsItem]]):
         for i in range(total):
             offset = 2 + i * _RECORD_SIZE
             require_bytes(body, offset, _RECORD_SIZE, f"GoodsListCmd record[{i}]")
-            category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(
-                _RECORD_FMT,
-                body,
-                offset,
-                f"GoodsListCmd record[{i}]",
-            )
+            category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(_RECORD_FMT, body, offset, f"GoodsListCmd record[{i}]")
             name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
-            items.append(
-                GoodsItem(
-                    name=name,
-                    category=category,
-                    u=u,
-                    index=index,
-                    switch=switch,
-                    code=[v1, v2, v3],
-                    c1=c1,
-                    c2=c2,
-                )
-            )
+            items.append(GoodsItem(name=name, category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1, c2=c2))
         return items
 
 class KlineOffsetCmd(BaseCommand[KlineOffsetInfo]):
@@ -829,7 +740,7 @@ class KlineOffsetCmd(BaseCommand[KlineOffsetInfo]):
         请求数量。
     """
 
-    def __init__(self, offset: int = 0, count: int = 128000) -> None:
+    def __init__(self, offset: int = 0, count: int = 128000):
         self._offset = offset
         self._count = count
 
@@ -879,12 +790,8 @@ class ServerInfoCmd(BaseCommand[ServerSession]):
             vals = unpack_from("<8H", body, p, "server_info session")
             sessions: list[dict[str, object]] = []
             for i in range(0, 8, 2):
-                sessions.append(
-                    {
-                        "open": f"{vals[i] // 60}:{vals[i] % 60:02d}",
-                        "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}",
-                    }
-                )
+                sessions.append({
+                        "open": f"{vals[i] // 60}:{vals[i] % 60:02d}", "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}", })
             return sessions, p + 16
 
         today, pos = _parse_date(pos)
@@ -906,14 +813,7 @@ class ServerInfoCmd(BaseCommand[ServerSession]):
             pos += 4
             market_param_2 = unpack_from("<I", body, pos, "server_info param2")[0]
 
-        return ServerSession(
-            today=today,
-            last_trading_day=last_trading_day,
-            sessions_1=sessions_1,
-            sessions_2=sessions_2,
-            market_param_1=market_param_1,
-            market_param_2=market_param_2,
-        )
+        return ServerSession(today=today, last_trading_day=last_trading_day, sessions_1=sessions_1, sessions_2=sessions_2, market_param_1=market_param_1, market_param_2=market_param_2)
 
 class SymbolAuctionCmd(BaseCommand[list[AuctionItem]]):
     """查询集合竞价数据。
@@ -930,7 +830,7 @@ class SymbolAuctionCmd(BaseCommand[list[AuctionItem]]):
         请求数量。
     """
 
-    def __init__(self, market: int, code: str, start: int = 0, count: int = 500) -> None:
+    def __init__(self, market: int, code: str, start: int = 0, count: int = 500):
         self._market = market
         self._code = code
         self._start = start
@@ -938,13 +838,7 @@ class SymbolAuctionCmd(BaseCommand[list[AuctionItem]]):
 
     def build_request(self) -> bytes:
         # H: market, 22s: code in GBK, I: start, I: count, 10 bytes padding
-        body = struct.pack(
-            "<H22sII10x",
-            self._market,
-            self._code.encode("gbk"),
-            self._start,
-            self._count,
-        )
+        body = struct.pack("<H22sII10x", self._market, self._code.encode("gbk"), self._start, self._count)
         return build_mac_request(0x123D, body)
 
     def parse_response(self, body: bytes) -> list[AuctionItem]:
@@ -956,18 +850,9 @@ class SymbolAuctionCmd(BaseCommand[list[AuctionItem]]):
             offset = 36 + i * 16
             if offset + 16 > len(body):
                 break
-            time_sec, price, matched, unmatched = unpack_from(
-                "<IfIi", body, offset, f"auction item[{i}]"
-            )
+            time_sec, price, matched, unmatched = unpack_from("<IfIi", body, offset, f"auction item[{i}]")
 
-            items.append(
-                AuctionItem(
-                    time=time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60),
-                    price=price,
-                    matched=matched,
-                    unmatched=unmatched,
-                )
-            )
+            items.append(AuctionItem(time=time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60), price=price, matched=matched, unmatched=unmatched))
 
         return items
 
@@ -1001,16 +886,7 @@ class SymbolBarCmd(BaseCommand[list[MacBar]]):
         fq:     复权方式。
     """
 
-    def __init__(
-        self,
-        market: int,
-        code: str,
-        period: Period = Period.DAILY,
-        times: int = 1,
-        start: int = 0,
-        count: int = 700,
-        fq: Adjust = Adjust.NONE,
-    ) -> None:
+    def __init__(self, market: int, code: str, period: Period = Period.DAILY, times: int = 1, start: int = 0, count: int = 700, fq: Adjust = Adjust.NONE):
         self._market = market
         self._code = code
         self._period = period
@@ -1020,22 +896,7 @@ class SymbolBarCmd(BaseCommand[list[MacBar]]):
         self._fq = fq
 
     def build_request(self) -> bytes:
-        body = struct.pack(
-            "<H22sHH I HH bbb bH4s",
-            self._market,
-            self._code.encode("gbk"),
-            self._period,
-            self._times,
-            self._start,
-            self._count,
-            self._fq,
-            1,
-            1,
-            0,
-            1,
-            0,
-            b"",
-        )
+        body = struct.pack("<H22sHH I HH bbb bH4s", self._market, self._code.encode("gbk"), self._period, self._times, self._start, self._count, self._fq, 1, 1, 0, 1, 0, b"")
         return build_mac_request(0x122E, body)
 
     def parse_response(self, body: bytes) -> list[MacBar]:
@@ -1047,35 +908,20 @@ class SymbolBarCmd(BaseCommand[list[MacBar]]):
         if count < 0:
             count = 0
 
-        is_intraday = (
-            self._period < Period.DAILY
+        is_intraday = (self._period < Period.DAILY
             or self._period == Period.MIN_1
-            or self._period == Period.MINS
-        )
+            or self._period == Period.MINS)
 
         results: list[MacBar] = []
         for i in range(count):
             offset = 33 + i * 36
             if offset + 36 > len(body):
                 break
-            (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from(
-                "<II7f", body, offset, f"symbol_bar bar[{i}]"
-            )
+            (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from("<II7f", body, offset, f"symbol_bar bar[{i}]")
             if ymd < 19900101 or ymd > 20991231:
                 continue
             dt = _combine_datetime(ymd, time_num, is_intraday)
-            results.append(
-                MacBar(
-                    datetime=dt,
-                    open=open_,
-                    high=high,
-                    low=low,
-                    close=close,
-                    vol=vol,
-                    amount=amount,
-                    float_shares=float_shares,
-                )
-            )
+            results.append(MacBar(datetime=dt, open=open_, high=high, low=low, close=close, vol=vol, amount=amount, float_shares=float_shares))
 
         return results
 
@@ -1107,18 +953,13 @@ class SymbolBelongBoardCmd(BaseCommand[list[BelongBoardInfo]]):
         证券代码。
     """
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self._market = market
         self._code = code
 
     def build_request(self) -> bytes:
         # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_GLHQ"
-        body = struct.pack(
-            "<H8s16x21s",
-            self._market,
-            self._code.encode("gbk"),
-            b"Stock_GLHQ",
-        )
+        body = struct.pack("<H8s16x21s", self._market, self._code.encode("gbk"), b"Stock_GLHQ")
         # head=1 用于区分 symbol_belong_board 与 symbol_capital_flow (head=2)
         return build_mac_request(0x1218, body, head_flag=1)
 
@@ -1146,16 +987,7 @@ class SymbolBelongBoardCmd(BaseCommand[list[BelongBoardInfo]]):
             close = _to_float(row[4]) if n > 4 and row[4] else 0.0
             pre_close = _to_float(row[5]) if n > 5 and row[5] else 0.0
 
-            results.append(
-                BelongBoardInfo(
-                    board_type=bt,
-                    market=mkt,
-                    board_code=board_code,
-                    board_name=board_name,
-                    close=close,
-                    pre_close=pre_close,
-                )
-            )
+            results.append(BelongBoardInfo(board_type=bt, market=mkt, board_code=board_code, board_name=board_name, close=close, pre_close=pre_close))
 
         return results
 
@@ -1179,18 +1011,13 @@ class SymbolCapitalFlowCmd(BaseCommand[CapitalFlowData]):
         证券代码。
     """
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self._market = market
         self._code = code
 
     def build_request(self) -> bytes:
         # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_ZJLX"
-        body = struct.pack(
-            "<H8s16x21s",
-            self._market,
-            self._code.encode("gbk"),
-            b"Stock_ZJLX",
-        )
+        body = struct.pack("<H8s16x21s", self._market, self._code.encode("gbk"), b"Stock_ZJLX")
         # head=2 用于区分 symbol_capital_flow 与 symbol_belong_board (head=1)
         _HEAD_FLAG = 2
         return build_mac_request(0x1218, body, head_flag=_HEAD_FLAG)
@@ -1219,21 +1046,7 @@ class SymbolCapitalFlowCmd(BaseCommand[CapitalFlowData]):
         mid_net_5d = _to_float(five_days_data[4]) if len(five_days_data) > 4 else 0.0
         large_net_5d = _to_float(five_days_data[3]) if len(five_days_data) > 3 else 0.0
 
-        return CapitalFlowData(
-            date="",
-            main_in=main_in,
-            main_out=main_out,
-            main_net=main_in - main_out,
-            small_in=retail_in,
-            small_out=retail_out,
-            small_net=retail_in - retail_out,
-            mid_in=0.0,
-            mid_out=0.0,
-            mid_net=mid_net_5d,
-            large_in=0.0,
-            large_out=0.0,
-            large_net=large_net_5d,
-        )
+        return CapitalFlowData(date="", main_in=main_in, main_out=main_out, main_net=main_in - main_out, small_in=retail_in, small_out=retail_out, small_net=retail_in - retail_out, mid_in=0.0, mid_out=0.0, mid_net=mid_net_5d, large_in=0.0, large_out=0.0, large_net=large_net_5d)
 
 
 class SymbolInfoCmd(BaseCommand[MacSymbolInfo]):
@@ -1244,7 +1057,7 @@ class SymbolInfoCmd(BaseCommand[MacSymbolInfo]):
         code:   6 位股票代码。
     """
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self._market = market
         self._code = code
 
@@ -1259,55 +1072,14 @@ class SymbolInfoCmd(BaseCommand[MacSymbolInfo]):
 
         # data[76:96] padding (zeros)
         # data[96:..] core fields
-        (
-            date_raw,
-            time_raw,
-            activity,
-            pre_close,
-            open,
-            high,
-            low,
-            close,
-            momentum,
-            vol,
-            amount,
-            inside_volume,
-            outside_volume,
-        ) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
+        (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume, outside_volume) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
 
         # data[148:..]
-        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from(
-            "<HIf20xI3f", body, 148, "symbol_info extra"
-        )
+        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from("<HIf20xI3f", body, 148, "symbol_info extra")
 
-        dt = datetime(
-            date_raw // 10000,
-            (date_raw % 10000) // 100,
-            date_raw % 100,
-            time_raw // 10000,
-            (time_raw % 10000) // 100,
-            time_raw % 100,
-        )
+        dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000, (time_raw % 10000) // 100, time_raw % 100)
 
-        return MacSymbolInfo(
-            market=market,
-            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            time=dt,
-            activity=activity,
-            pre_close=pre_close,
-            open=open,
-            high=high,
-            low=low,
-            close=close,
-            momentum=momentum,
-            vol=int(vol),
-            amount=amount,
-            inside_volume=inside_volume,
-            outside_volume=outside_volume,
-            turnover=turnover,
-            avg=avg,
-        )
+        return MacSymbolInfo(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), time=dt, activity=activity, pre_close=pre_close, open=open, high=high, low=low, close=close, momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume, outside_volume=outside_volume, turnover=turnover, avg=avg)
 
 
 class SymbolQuotesCmd(BaseCommand[list[MacQuoteField]]):
@@ -1318,7 +1090,7 @@ class SymbolQuotesCmd(BaseCommand[list[MacQuoteField]]):
         fields: 字段选择，默认 PresetField.COMMON。
     """
 
-    def __init__(self, stocks: list[tuple[int, str]], fields: Fields = None) -> None:
+    def __init__(self, stocks: list[tuple[int, str]], fields: Fields = None):
         if not stocks:
             raise ValueError("stocks 不能为空")
         self._stocks = stocks
@@ -1373,14 +1145,7 @@ class SymbolQuotesCmd(BaseCommand[list[MacQuoteField]]):
 
                     fields_dict[field_bit.field_name] = value
 
-            results.append(
-                MacQuoteField(
-                    market=market,
-                    code=code,
-                    name=name,
-                    fields=fields_dict,
-                )
-            )
+            results.append(MacQuoteField(market=market, code=code, name=name, fields=fields_dict))
 
         return results
 
@@ -1394,12 +1159,7 @@ class SymbolTickChartCmd(BaseCommand[MacTickChart]):
         query_date: 查询日期（None 或 date(0,0,0) 表示今天）。
     """
 
-    def __init__(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-    ) -> None:
+    def __init__(self, market: int, code: str, query_date: date = None):
         self._market = market
         self._code = code
         if query_date is not None:
@@ -1408,79 +1168,24 @@ class SymbolTickChartCmd(BaseCommand[MacTickChart]):
             self._ymd = 0
 
     def build_request(self) -> bytes:
-        body = struct.pack(
-            "<H22sI5H",
-            self._market,
-            self._code.encode("gbk"),
-            self._ymd,
-            1,
-            0,
-            0,
-            0,
-            0,
-        )
+        body = struct.pack("<H22sI5H", self._market, self._code.encode("gbk"), self._ymd, 1, 0, 0, 0, 0)
         return build_mac_request(0x122D, body)
 
     def parse_response(self, body: bytes) -> MacTickChart:
         # 头部: market(2) + code(22) + query_date(4) + reserved(1) + ref_price(4) + count(2)
-        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from(
-            "<H22sIBfH", body, 0, "tick_chart header"
-        )
+        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0, "tick_chart header")
 
         ticks: list[MacTick] = []
         for i in range(count):
             offset = 35 + i * 18
-            (minutes, price, avg, vol, momentum) = unpack_from(
-                "<HffIf", body, offset, f"tick_chart tick[{i}]"
-            )
-            ticks.append(
-                MacTick(
-                    time=time(minutes // 60 % 24, minutes % 60),
-                    price=price,
-                    avg=avg,
-                    vol=vol,
-                    momentum=momentum,
-                )
-            )
+            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
+            ticks.append(MacTick(time=time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
 
         # 尾部元数据
         tail_offset = 35 + count * 18
-        (
-            name_raw,
-            _decimal,
-            _category,
-            _vol_unit,
-            _date_raw,
-            _time_raw,
-            pre_close,
-            open,
-            high,
-            low,
-            close,
-            _momentum_tail,
-            vol,
-            amount,
-            _tail_pad2,
-            turnover,
-            avg_tail,
-            _industry,
-        ) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
+        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close, _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
 
-        return MacTickChart(
-            market=market,
-            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            pre_close=pre_close,
-            open=open,
-            high=high,
-            low=low,
-            close=close,
-            vol=int(vol),
-            amount=amount,
-            turnover=turnover,
-            avg=avg_tail,
-            charts=ticks,
-        )
+        return MacTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol), amount=amount, turnover=turnover, avg=avg_tail, charts=ticks)
 
 
 class SymbolTransactionCmd(BaseCommand[list[MacTransaction]]):
@@ -1494,14 +1199,7 @@ class SymbolTransactionCmd(BaseCommand[list[MacTransaction]]):
         count:      返回条数。
     """
 
-    def __init__(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-        start: int = 0,
-        count: int = 1000,
-    ) -> None:
+    def __init__(self, market: int, code: str, query_date: date = None, start: int = 0, count: int = 1000):
         self._market = market
         self._code = code
         if query_date is not None:
@@ -1512,14 +1210,7 @@ class SymbolTransactionCmd(BaseCommand[list[MacTransaction]]):
         self._count = count
 
     def build_request(self) -> bytes:
-        body = struct.pack(
-            "<H22sIIH10x",
-            self._market,
-            self._code.encode("gbk"),
-            self._ymd,
-            self._start,
-            self._count,
-        )
+        body = struct.pack("<H22sIIH10x", self._market, self._code.encode("gbk"), self._ymd, self._start, self._count)
         return build_mac_request(0x122F, body)
 
     def parse_response(self, body: bytes) -> list[MacTransaction]:
@@ -1529,18 +1220,8 @@ class SymbolTransactionCmd(BaseCommand[list[MacTransaction]]):
         results: list[MacTransaction] = []
         for i in range(count):
             offset = 39 + i * 18
-            (time_sec, price, volume, trade_count, bs_flag) = unpack_from(
-                "<IfIIH", body, offset, f"transaction item[{i}]"
-            )
-            results.append(
-                MacTransaction(
-                    time=time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60),
-                    price=price,
-                    vol=volume,
-                    trade_count=trade_count,
-                    bs_flag=bs_flag,
-                )
-            )
+            (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset, f"transaction item[{i}]")
+            results.append(MacTransaction(time=time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price, vol=volume, trade_count=trade_count, bs_flag=bs_flag))
 
         return results
 
@@ -1555,13 +1236,7 @@ class TickChartsCmd(BaseCommand[MacMultiTickChart]):
         days:       天数（最多 5）。
     """
 
-    def __init__(
-        self,
-        market: int,
-        code: str,
-        start_date: date = None,
-        days: int = 5,
-    ) -> None:
+    def __init__(self, market: int, code: str, start_date: date = None, days: int = 5):
         self._market = market
         self._code = code
         if start_date is not None:
@@ -1571,14 +1246,7 @@ class TickChartsCmd(BaseCommand[MacMultiTickChart]):
         self._days = days
 
     def build_request(self) -> bytes:
-        body = struct.pack(
-            "<H22sIHH6x",
-            self._market,
-            self._code.encode("gbk"),
-            self._start_ymd,
-            self._days,
-            1,
-        )
+        body = struct.pack("<H22sIHH6x", self._market, self._code.encode("gbk"), self._start_ymd, self._days, 1)
         return build_mac_request(0x123E, body)
 
     def parse_response(self, body: bytes) -> MacMultiTickChart:
@@ -1598,66 +1266,18 @@ class TickChartsCmd(BaseCommand[MacMultiTickChart]):
             for t in range(page_size):
                 index = d * page_size + t
                 offset = 71 + index * 14
-                (minutes, price, avg, vol, tick_reserved) = unpack_from(
-                    "<HffHH", body, offset, f"tick_charts tick[{d}][{t}]"
-                )
-                ticks.append(
-                    MacTick(
-                        time=time(minutes // 60, minutes % 60),
-                        price=price,
-                        avg=avg,
-                        vol=vol,
-                    )
-                )
+                (minutes, price, avg, vol, tick_reserved) = unpack_from("<HffHH", body, offset, f"tick_charts tick[{d}][{t}]")
+                ticks.append(MacTick(time=time(minutes // 60, minutes % 60), price=price, avg=avg, vol=vol))
 
             ymd = date_ints[d]
             day_date = date(ymd // 10000, (ymd % 10000) // 100, ymd % 100)
-            days.append(
-                MacMultiTickDay(
-                    date=day_date,
-                    pre_close=pre_close_floats[d],
-                    ticks=ticks,
-                )
-            )
+            days.append(MacMultiTickDay(date=day_date, pre_close=pre_close_floats[d], ticks=ticks))
 
         # 尾部元数据
         tail_offset = 71 + count * page_size * 14
-        (
-            name_raw,
-            _decimal,
-            _category,
-            _vol_unit,
-            _date_raw,
-            _time_raw,
-            pre_close,
-            open,
-            high,
-            low,
-            close,
-            _momentum,
-            vol,
-            amount,
-            _tail_pad2,
-            turnover,
-            avg,
-            _industry,
-        ) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_charts tail")
+        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close, _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_charts tail")
 
-        return MacMultiTickChart(
-            market=market,
-            code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-            pre_close=pre_close,
-            open=open,
-            high=high,
-            low=low,
-            close=close,
-            vol=int(vol),
-            amount=amount,
-            turnover=turnover,
-            avg=avg,
-            charts=days,
-        )
+        return MacMultiTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol), amount=amount, turnover=turnover, avg=avg, charts=days)
 
 def _describe_unusual(unusual_type: int, data: bytes) -> tuple[str, str]:
     """根据异动类型解析描述和数值。"""
@@ -1745,25 +1365,19 @@ class UnusualCmd(BaseCommand[list[UnusualItem]]):
         请求数量（最大 600）。
     """
 
-    def __init__(self, market: int, start: int = 0, count: int = 600) -> None:
+    def __init__(self, market: int, start: int = 0, count: int = 600):
         self._market = market
         self._start = start
         self._count = min(count, 600)
 
     def build_request(self) -> bytes:
         # H:market, H:start, 2x padding, H:count, 2x padding, 5×H monitoring params
-        body = struct.pack(
-            "<HH2xH2xH5H",
-            self._market,
-            self._start,
-            self._count,
-            1,  # monitor param 1
+        body = struct.pack("<HH2xH2xH5H", self._market, self._start, self._count, 1,  # monitor param 1
             200,  # monitor param 2
             30,  # monitor param 3
             40,  # monitor param 4
             50,  # monitor param 5
-            200,  # monitor param 6
-        )
+            200,  # monitor param 6)
         return build_mac_request(0x1237, body)
 
     def parse_response(self, body: bytes) -> list[UnusualItem]:
@@ -1775,26 +1389,14 @@ class UnusualCmd(BaseCommand[list[UnusualItem]]):
             if offset + 32 > len(body):
                 break
 
-            market, code_raw, _, unusual_type, _, index, _z = unpack_from(
-                "<H6sBBBHH", body, offset, f"unusual record[{i}]"
-            )
+            market, code_raw, _, unusual_type, _, index, _z = unpack_from("<H6sBBBHH", body, offset, f"unusual record[{i}]")
 
             desc, value = _describe_unusual(unusual_type, body[offset + 15 : offset + 28])
 
             hour, minute_sec = unpack_from("<BH", body, offset + 29, f"unusual time[{i}]")
 
-            results.append(
-                UnusualItem(
-                    index=index,
-                    market=market,
-                    code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                    name="",  # populated below from text section
-                    time=time(hour, minute_sec // 100, minute_sec % 100),
-                    desc=desc,
-                    value=value,
-                    unusual_type=unusual_type,
-                )
-            )
+            results.append(UnusualItem(index=index, market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name="",  # populated below from text section
+                    time=time(hour, minute_sec // 100, minute_sec % 100), desc=desc, value=value, unusual_type=unusual_type))
 
         # Text section: stock names in GBK, comma-separated
         binary_length = 2 + count * 32
@@ -1805,18 +1407,7 @@ class UnusualCmd(BaseCommand[list[UnusualItem]]):
         populated: list[UnusualItem] = []
         for i, item in enumerate(results):
             name = text_list[i] if i < len(text_list) else ""
-            populated.append(
-                UnusualItem(
-                    index=item.index,
-                    market=item.market,
-                    code=item.code,
-                    name=name,
-                    time=item.time,
-                    desc=item.desc,
-                    value=item.value,
-                    unusual_type=item.unusual_type,
-                )
-            )
+            populated.append(UnusualItem(index=item.index, market=item.market, code=item.code, name=name, time=item.time, desc=item.desc, value=item.value, unusual_type=item.unusual_type))
 
         return populated
 
@@ -1906,14 +1497,7 @@ class MacClient:
             df = c.get_board_list()
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 15.0):
         self._host = host if host is not None else get_best_host()
         self._port = port if port is not None else get_port()
         self._timeout = timeout if timeout is not None else get_timeout()
@@ -1926,15 +1510,7 @@ class MacClient:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = None,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> MacClient:
+    def from_best_host(cls, hosts: list[str] = None, port: int = None, timeout: float = None, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 15.0) -> MacClient:
         """测量所有 MAC 服务器延迟，选最低延迟的建立客户端。自动保存最佳主机。"""
         if hosts is None:
             hosts = get_mac_hosts()
@@ -1948,11 +1524,7 @@ class MacClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
         """测量多台 MAC 服务器延迟，返回按延迟排序的 (host, seconds) 列表。"""
         if hosts is None:
             hosts = get_mac_hosts()
@@ -1964,20 +1536,20 @@ class MacClient:
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    def connect(self) -> None:
+    def connect(self):
         self._conn.connect()
         if self._heartbeat_interval > 0:
             self._conn.start_heartbeat(self._heartbeat_interval)
 
-    def close(self) -> None:
+    def close(self):
         self._conn.stop_heartbeat()
         self._conn.close()
 
-    def disconnect(self) -> None:
+    def disconnect(self):
         """Alias for close()."""
         self.close()
 
-    def ensure_connected(self) -> None:
+    def ensure_connected(self):
         """验证连接存活，断线则自动重建。"""
         try:
             self._execute(KlineOffsetCmd(0, 1))
@@ -1993,12 +1565,7 @@ class MacClient:
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
     # ------------------------------------------------------------------ #
@@ -2030,11 +1597,7 @@ class MacClient:
     # 报价
     # ------------------------------------------------------------------ #
 
-    def get_stock_quotes(
-        self,
-        stocks: list[tuple[int, str]],
-        fields: object = None,
-    ) -> pd.DataFrame:
+    def get_stock_quotes(self, stocks: list[tuple[int, str]], fields: object = None) -> pd.DataFrame:
         """批量获取自定义字段报价（最多80只/次）。
 
         Args:
@@ -2044,16 +1607,7 @@ class MacClient:
         quotes = self._execute(SymbolQuotesCmd(stocks, fields))  # type: ignore[arg-type]
         return _quotes_to_df(quotes)
 
-    def get_stock_quotes_list(
-        self,
-        category: Category,
-        start: int = 0,
-        count: int = 80,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-        exclude_flags: list[FilterType] = None,
-        fields: Fields = None,
-    ) -> pd.DataFrame:
+    def get_stock_quotes_list(self, category: Category, start: int = 0, count: int = 80, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, exclude_flags: list[FilterType] = None, fields: Fields = None) -> pd.DataFrame:
         """获取市场分类报价列表（自动分页）。
 
         Args:
@@ -2073,17 +1627,7 @@ class MacClient:
         offset = start
 
         while fetched < count:
-            batch = self._execute(
-                BoardMembersQuotesCmd(
-                    board_code=int(category),
-                    sort_type=sort_type,
-                    start=offset,
-                    page_size=page_size,
-                    sort_order=sort_order,
-                    fields=fields,
-                    exclude_flags=exclude_flags,
-                )
-            )
+            batch = self._execute(BoardMembersQuotesCmd(board_code=int(category), sort_type=sort_type, start=offset, page_size=page_size, sort_order=sort_order, fields=fields, exclude_flags=exclude_flags))
             if not batch:
                 break
             all_quotes = batch + all_quotes
@@ -2098,16 +1642,7 @@ class MacClient:
     # K 线（支持复权）
     # ------------------------------------------------------------------ #
 
-    def get_stock_kline(
-        self,
-        market: int,
-        code: str,
-        period: Period = Period.DAILY,
-        start: int = 0,
-        count: int = 800,
-        times: int = 1,
-        adjust: Adjust = Adjust.NONE,
-    ) -> pd.DataFrame:
+    def get_stock_kline(self, market: int, code: str, period: Period = Period.DAILY, start: int = 0, count: int = 800, times: int = 1, adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
         """获取 K 线数据（自动分页，每页最多 700 条）。
 
         Args:
@@ -2125,17 +1660,7 @@ class MacClient:
 
         while fetched < count:
             page_size = min(count - fetched, _KLINE_PAGE_SIZE)
-            bars = self._execute(
-                SymbolBarCmd(
-                    market=market,
-                    code=code,
-                    period=period,
-                    times=times,
-                    start=offset,
-                    count=page_size,
-                    fq=adjust,
-                )
-            )
+            bars = self._execute(SymbolBarCmd(market=market, code=code, period=period, times=times, start=offset, count=page_size, fq=adjust))
             if not bars:
                 break
             all_bars = bars + all_bars
@@ -2146,16 +1671,7 @@ class MacClient:
 
         return _to_df(all_bars)
 
-    def get_stock_kline_with_indicators(
-        self,
-        market: int,
-        code: str,
-        indicators: list[str],
-        period: Period = Period.DAILY,
-        count: int = 30,
-        adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, float]] = None,
-    ) -> pd.DataFrame:
+    def get_stock_kline_with_indicators(self, market: int, code: str, indicators: list[str], period: Period = Period.DAILY, count: int = 30, adjust: Adjust = Adjust.QFQ, params: dict[str, dict[str, float]] = None) -> pd.DataFrame:
         """获取 K 线数据并计算技术指标。
 
         自动获取足够的历史数据用于指标预热（EMA 至少需要 120 周期）。
@@ -2178,12 +1694,7 @@ class MacClient:
     # 分时
     # ------------------------------------------------------------------ #
 
-    def get_tick_chart(
-        self,
-        market: int,
-        code: str,
-        date: int = None,
-    ) -> pd.DataFrame:
+    def get_tick_chart(self, market: int, code: str, date: int = None) -> pd.DataFrame:
         """获取单日分时图。
 
         Args:
@@ -2193,19 +1704,11 @@ class MacClient:
         """
         from datetime import date as date_cls
 
-        query_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
+        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
         chart = self._execute(SymbolTickChartCmd(market, code, query_date))
         return pd.DataFrame(_flatten_tick_chart(chart))
 
-    def get_tick_charts(
-        self,
-        market: int,
-        code: str,
-        date: int = None,
-        days: int = 5,
-    ) -> pd.DataFrame:
+    def get_tick_charts(self, market: int, code: str, date: int = None, days: int = 5) -> pd.DataFrame:
         """获取多日分时图（最多 5 天）。
 
         Args:
@@ -2216,9 +1719,7 @@ class MacClient:
         """
         from datetime import date as date_cls
 
-        start_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
+        start_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
         chart = self._execute(TickChartsCmd(market, code, start_date, days))
         return pd.DataFrame(_flatten_multi_tick_chart(chart))
 
@@ -2236,14 +1737,7 @@ class MacClient:
     # 逐笔成交
     # ------------------------------------------------------------------ #
 
-    def get_transactions(
-        self,
-        market: int,
-        code: str,
-        count: int = 2000,
-        start: int = 0,
-        date: int = None,
-    ) -> pd.DataFrame:
+    def get_transactions(self, market: int, code: str, count: int = 2000, start: int = 0, date: int = None) -> pd.DataFrame:
         """获取逐笔成交数据（自动分页）。
 
         Args:
@@ -2255,14 +1749,8 @@ class MacClient:
         """
         from datetime import date as date_cls
 
-        query_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
-        all_items = self._execute(
-            SymbolTransactionCmd(
-                market, code, query_date, start, min(count, _TRANSACTION_PAGE_SIZE)
-            )
-        )
+        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
+        all_items = self._execute(SymbolTransactionCmd(market, code, query_date, start, min(count, _TRANSACTION_PAGE_SIZE)))
         fetched = len(all_items)
         offset = start + fetched
 
@@ -2297,11 +1785,7 @@ class MacClient:
     # 板块
     # ------------------------------------------------------------------ #
 
-    def get_board_list(
-        self,
-        board_type: BoardType = BoardType.ALL,
-        count: int = 10000,
-    ) -> pd.DataFrame:
+    def get_board_list(self, board_type: BoardType = BoardType.ALL, count: int = 10000) -> pd.DataFrame:
         """获取板块列表（自动分页）。
 
         Args:
@@ -2325,15 +1809,7 @@ class MacClient:
 
         return _to_df(all_items)
 
-    def get_board_members(
-        self,
-        board_symbol: str,
-        count: int = 100000,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-        fields: object = PresetField.COMMON,
-        exclude_flags: list[FilterType] = None,
-    ) -> pd.DataFrame:
+    def get_board_members(self, board_symbol: str, count: int = 100000, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, fields: object = PresetField.COMMON, exclude_flags: list[FilterType] = None) -> pd.DataFrame:
         """获取板块成分股报价（自动分页）。
 
         Args:
@@ -2351,17 +1827,8 @@ class MacClient:
 
         while fetched < count:
             page_size = min(count - fetched, _BOARD_MEMBERS_PAGE_SIZE)
-            batch = self._execute(
-                BoardMembersQuotesCmd(
-                    board_code=board_code,
-                    sort_type=sort_type,
-                    start=offset,
-                    page_size=page_size,
-                    sort_order=sort_order,
-                    fields=fields,  # type: ignore[arg-type]
-                    exclude_flags=exclude_flags,
-                )
-            )
+            batch = self._execute(BoardMembersQuotesCmd(board_code=board_code, sort_type=sort_type, start=offset, page_size=page_size, sort_order=sort_order, fields=fields,  # type: ignore[arg-type]
+                    exclude_flags=exclude_flags))
             if not batch:
                 break
             all_quotes = batch + all_quotes
@@ -2382,12 +1849,7 @@ class MacClient:
         items = self._execute(SymbolBelongBoardCmd(market, code))
         return _to_df(items)
 
-    def get_board_summary(
-        self,
-        board_symbol: str,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-    ) -> dict[str, Any]:
+    def get_board_summary(self, board_symbol: str, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC) -> dict[str, Any]:
         """获取板块汇总：总成交金额、主力资金流向等（聚合成分股数据）。
 
         基于 ``get_board_members`` 获取全部成分股报价，对成交额和资金流字段求和。
@@ -2411,19 +1873,12 @@ class MacClient:
                 members         成分股明细 DataFrame
         """
 
-        fields = (
-            PresetField.BASIC
+        fields = (PresetField.BASIC
             + FieldBit.AMOUNT
             + FieldBit.MAIN_NET_AMOUNT
             + FieldBit.MAIN_NET_3D_AMOUNT
-            + FieldBit.MAIN_NET_5D_AMOUNT
-        )
-        df = self.get_board_members(
-            board_symbol,
-            sort_type=sort_type,
-            sort_order=sort_order,
-            fields=fields,
-        )
+            + FieldBit.MAIN_NET_5D_AMOUNT)
+        df = self.get_board_members(board_symbol, sort_type=sort_type, sort_order=sort_order, fields=fields)
 
         agg_keys = ("amount", "main_net_amount", "main_net_3d_amount", "main_net_5d_amount")
         numeric_cols = [c for c in agg_keys if c in df.columns]
@@ -2439,24 +1894,9 @@ class MacClient:
             up_count = down_count = 0
 
         return {
-            "member_count": len(df),
-            "amount": float(sums.get("amount", 0.0)),
-            "vol": int(df["vol"].sum()) if "vol" in df.columns else 0,
-            "main_net_amount": float(sums.get("main_net_amount", 0.0)),
-            "main_net_3d": float(sums.get("main_net_3d_amount", 0.0)),
-            "main_net_5d": float(sums.get("main_net_5d_amount", 0.0)),
-            "up_count": up_count,
-            "down_count": down_count,
-            "members": df,
-        }
+            "member_count": len(df), "amount": float(sums.get("amount", 0.0)), "vol": int(df["vol"].sum()) if "vol" in df.columns else 0, "main_net_amount": float(sums.get("main_net_amount", 0.0)), "main_net_3d": float(sums.get("main_net_3d_amount", 0.0)), "main_net_5d": float(sums.get("main_net_5d_amount", 0.0)), "up_count": up_count, "down_count": down_count, "members": df, }
 
-    def get_board_ranking(
-        self,
-        board_type: BoardType = BoardType.HY,
-        top_n: int = 50,
-        sort_by: str = "change_pct",
-        ascending: bool = False,
-    ) -> pd.DataFrame:
+    def get_board_ranking(self, board_type: BoardType = BoardType.HY, top_n: int = 50, sort_by: str = "change_pct", ascending: bool = False) -> pd.DataFrame:
         """获取板块涨跌幅排行榜（含成交额、成交量、资金流入流出、涨跌家数）。
 
         先通过 ``get_board_list`` 获取全部板块，再逐个调用
@@ -2505,33 +1945,15 @@ class MacClient:
         for _, row in boards_df.iterrows():
             code = str(row["code"])
             summary = self.get_board_summary(code)
-            rows.append(
-                {
-                    "code": code,
-                    "name": row.get("name", ""),
-                    "change_pct": round(float(row.get("change_pct", 0.0)), 2),
-                    "amount": summary["amount"],
-                    "vol": summary["vol"],
-                    "main_net_amount": summary["main_net_amount"],
-                    "up_count": summary["up_count"],
-                    "down_count": summary["down_count"],
-                    "member_count": summary["member_count"],
-                }
-            )
+            rows.append({
+                    "code": code, "name": row.get("name", ""), "change_pct": round(float(row.get("change_pct", 0.0)), 2), "amount": summary["amount"], "vol": summary["vol"], "main_net_amount": summary["main_net_amount"], "up_count": summary["up_count"], "down_count": summary["down_count"], "member_count": summary["member_count"], })
 
         result = pd.DataFrame(rows)
         if not result.empty:
             result = result.sort_values(sort_by, ascending=ascending).reset_index(drop=True)
         return result
 
-    def get_board_change_ranking(
-        self,
-        board_type: BoardType = BoardType.HY,
-        target_date: int = None,
-        days: int = 20,
-        top_n: int = None,
-        ascending: bool = False,
-    ) -> pd.DataFrame:
+    def get_board_change_ranking(self, board_type: BoardType = BoardType.HY, target_date: int = None, days: int = 20, top_n: int = None, ascending: bool = False) -> pd.DataFrame:
         """获取板块 N 日涨跌幅排行榜。
 
         对每个板块获取日 K 线，计算指定日期前 N 个交易日的涨跌幅并排行。
@@ -2563,24 +1985,14 @@ class MacClient:
         fetch_count = days + 10  # 缓冲节假日
         target_ts: pd.Timestamp = None
         if target_date is not None:
-            target_ts = pd.Timestamp(
-                year=target_date // 10000,
-                month=(target_date // 100) % 100,
-                day=target_date % 100,
-            )
+            target_ts = pd.Timestamp(year=target_date // 10000, month=(target_date // 100) % 100, day=target_date % 100)
 
         rows: list[dict[str, Any]] = []
         for _, row in boards_df.iterrows():
             board_code = str(row["code"])
             board_market = int(row["market"]) if "market" in row.index else 1
             try:
-                kline_df = self.get_stock_kline(
-                    market=board_market,
-                    code=board_code,
-                    period=Period.DAILY,
-                    count=fetch_count,
-                    adjust=Adjust.NONE,
-                )
+                kline_df = self.get_stock_kline(market=board_market, code=board_code, period=Period.DAILY, count=fetch_count, adjust=Adjust.NONE)
             except Exception:
                 _logger.debug("板块 %s K线获取失败，跳过", board_code, exc_info=True)
                 continue
@@ -2605,19 +2017,10 @@ class MacClient:
                 continue
 
             change_pct = round((close_end - close_start) / close_start * 100, 2)
-            rows.append(
-                {
-                    "code": board_code,
-                    "name": row.get("name", ""),
-                    "close_end": close_end,
-                    "close_start": close_start,
-                    "change_pct": change_pct,
-                }
-            )
+            rows.append({
+                    "code": board_code, "name": row.get("name", ""), "close_end": close_end, "close_start": close_start, "change_pct": change_pct, })
 
-        result = pd.DataFrame(
-            rows, columns=["code", "name", "close_end", "close_start", "change_pct"]
-        )
+        result = pd.DataFrame(rows, columns=["code", "name", "close_end", "close_start", "change_pct"])
         if not result.empty:
             result = result.sort_values("change_pct", ascending=ascending)
             if top_n is not None:
@@ -2659,12 +2062,7 @@ class MacClient:
     # 异动
     # ------------------------------------------------------------------ #
 
-    def get_unusual(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 0,
-    ) -> pd.DataFrame:
+    def get_unusual(self, market: int, start: int = 0, count: int = 0) -> pd.DataFrame:
         """获取市场异动数据。
 
         Args:
@@ -2684,11 +2082,7 @@ class MacClient:
         info = self._execute(ServerInfoCmd())
         return _to_df(info)
 
-    def get_kline_offset(
-        self,
-        offset: int = 0,
-        count: int = 128000,
-    ) -> pd.DataFrame:
+    def get_kline_offset(self, offset: int = 0, count: int = 128000) -> pd.DataFrame:
         """获取 K 线数据偏移信息。
 
         Args:
@@ -2711,13 +2105,7 @@ class MacClient:
         meta = self._execute(FileListCmd(filename))
         return _to_df(meta)
 
-    def download_file_chunk(
-        self,
-        filename: str,
-        index: int,
-        offset: int,
-        size: int,
-    ) -> bytes:
+    def download_file_chunk(self, filename: str, index: int, offset: int, size: int) -> bytes:
         """下载远程文件的一个分片。
 
         Args:
@@ -2728,11 +2116,7 @@ class MacClient:
         """
         return self._execute(FileDownloadCmd(filename, index, offset, size))
 
-    def download_file(
-        self,
-        filename: str,
-        filesize: int = 0,
-    ) -> bytearray:
+    def download_file(self, filename: str, filesize: int = 0) -> bytearray:
         """下载完整远程文件。
 
         Args:
@@ -2764,12 +2148,7 @@ class MacClient:
     # 扩展市场
     # ------------------------------------------------------------------ #
 
-    def get_goods_list(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 600,
-    ) -> pd.DataFrame:
+    def get_goods_list(self, market: int, start: int = 0, count: int = 600) -> pd.DataFrame:
         """获取扩展市场（期货/期权等）商品列表。
 
         Args:
@@ -2798,14 +2177,7 @@ class AsyncMacClient:
         单个 AsyncMacClient 仅维护一条 TCP 连接；并发调用会在连接内串行执行。
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 15.0):
         self._host = host if host is not None else get_best_host()
         self._port = port if port is not None else get_port()
         self._timeout = timeout if timeout is not None else get_timeout()
@@ -2820,15 +2192,7 @@ class AsyncMacClient:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = None,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> AsyncMacClient:
+    def from_best_host(cls, hosts: list[str] = None, port: int = None, timeout: float = None, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 15.0) -> AsyncMacClient:
         """测量所有 MAC 服务器延迟，选最低延迟的建立客户端。自动保存最佳主机。"""
         if hosts is None:
             hosts = get_mac_hosts()
@@ -2842,11 +2206,7 @@ class AsyncMacClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
         """测量多台 MAC 服务器延迟。"""
         if hosts is None:
             hosts = get_mac_hosts()
@@ -2858,19 +2218,19 @@ class AsyncMacClient:
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    async def connect(self) -> None:
+    async def connect(self):
         await self._conn.connect()
         self._start_heartbeat()
 
-    async def close(self) -> None:
+    async def close(self):
         await self._stop_heartbeat()
         await self._conn.close()
 
-    async def disconnect(self) -> None:
+    async def disconnect(self):
         """Alias for close()."""
         await self.close()
 
-    async def ensure_connected(self) -> None:
+    async def ensure_connected(self):
         """验证连接存活，断线则自动重建。"""
         try:
             await self._execute(KlineOffsetCmd(0, 1))
@@ -2885,26 +2245,21 @@ class AsyncMacClient:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
     # ------------------------------------------------------------------ #
     # 心跳
     # ------------------------------------------------------------------ #
 
-    def _start_heartbeat(self) -> None:
+    def _start_heartbeat(self):
         if self._heartbeat_interval <= 0:
             return
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-    async def _stop_heartbeat(self) -> None:
+    async def _stop_heartbeat(self):
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             try:
@@ -2913,7 +2268,7 @@ class AsyncMacClient:
                 pass
             self._heartbeat_task = None
 
-    async def _heartbeat_loop(self) -> None:
+    async def _heartbeat_loop(self):
         while True:
             try:
                 await asyncio.sleep(self._heartbeat_interval)
@@ -2951,24 +2306,11 @@ class AsyncMacClient:
     # 报价
     # ------------------------------------------------------------------ #
 
-    async def get_stock_quotes(
-        self,
-        stocks: list[tuple[int, str]],
-        fields: object = None,
-    ) -> pd.DataFrame:
+    async def get_stock_quotes(self, stocks: list[tuple[int, str]], fields: object = None) -> pd.DataFrame:
         quotes = await self._execute(SymbolQuotesCmd(stocks, fields))  # type: ignore[arg-type]
         return _quotes_to_df(quotes)
 
-    async def get_stock_quotes_list(
-        self,
-        category: Category,
-        start: int = 0,
-        count: int = 80,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-        exclude_flags: list[FilterType] = None,
-        fields: Fields = None,
-    ) -> pd.DataFrame:
+    async def get_stock_quotes_list(self, category: Category, start: int = 0, count: int = 80, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, exclude_flags: list[FilterType] = None, fields: Fields = None) -> pd.DataFrame:
         if fields is None:
             fields = PresetField.BASIC + PresetField.VOLUME
         all_quotes: list[MacQuoteField] = []
@@ -2977,17 +2319,7 @@ class AsyncMacClient:
         offset = start
 
         while fetched < count:
-            batch = await self._execute(
-                BoardMembersQuotesCmd(
-                    board_code=int(category),
-                    sort_type=sort_type,
-                    start=offset,
-                    page_size=page_size,
-                    sort_order=sort_order,
-                    fields=fields,
-                    exclude_flags=exclude_flags,
-                )
-            )
+            batch = await self._execute(BoardMembersQuotesCmd(board_code=int(category), sort_type=sort_type, start=offset, page_size=page_size, sort_order=sort_order, fields=fields, exclude_flags=exclude_flags))
             if not batch:
                 break
             all_quotes = batch + all_quotes
@@ -3002,33 +2334,14 @@ class AsyncMacClient:
     # K 线
     # ------------------------------------------------------------------ #
 
-    async def get_stock_kline(
-        self,
-        market: int,
-        code: str,
-        period: Period = Period.DAILY,
-        start: int = 0,
-        count: int = 800,
-        times: int = 1,
-        adjust: Adjust = Adjust.NONE,
-    ) -> pd.DataFrame:
+    async def get_stock_kline(self, market: int, code: str, period: Period = Period.DAILY, start: int = 0, count: int = 800, times: int = 1, adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
         all_bars: list[MacBar] = []
         fetched = 0
         offset = start
 
         while fetched < count:
             page_size = min(count - fetched, _KLINE_PAGE_SIZE)
-            bars = await self._execute(
-                SymbolBarCmd(
-                    market=market,
-                    code=code,
-                    period=period,
-                    times=times,
-                    start=offset,
-                    count=page_size,
-                    fq=adjust,
-                )
-            )
+            bars = await self._execute(SymbolBarCmd(market=market, code=code, period=period, times=times, start=offset, count=page_size, fq=adjust))
             if not bars:
                 break
             all_bars = bars + all_bars
@@ -3039,60 +2352,30 @@ class AsyncMacClient:
 
         return _to_df(all_bars)
 
-    async def get_stock_kline_with_indicators(
-        self,
-        market: int,
-        code: str,
-        indicators: list[str],
-        period: Period = Period.DAILY,
-        count: int = 30,
-        adjust: Adjust = Adjust.QFQ,
-        params: dict[str, dict[str, float]] = None,
-    ) -> pd.DataFrame:
+    async def get_stock_kline_with_indicators(self, market: int, code: str, indicators: list[str], period: Period = Period.DAILY, count: int = 30, adjust: Adjust = Adjust.QFQ, params: dict[str, dict[str, float]] = None) -> pd.DataFrame:
         """获取 K 线数据并计算技术指标（异步）。
 
         自动获取足够的历史数据用于指标预热（EMA 至少需要 120 周期）。
         """
         fetch_count = max(120 + count, 200)
-        df = await self.get_stock_kline(
-            market,
-            code,
-            period=period,
-            count=fetch_count,
-            adjust=adjust,
-        )
+        df = await self.get_stock_kline(market, code, period=period, count=fetch_count, adjust=adjust)
         return df
 
     # ------------------------------------------------------------------ #
     # 分时
     # ------------------------------------------------------------------ #
 
-    async def get_tick_chart(
-        self,
-        market: int,
-        code: str,
-        date: int = None,
-    ) -> pd.DataFrame:
+    async def get_tick_chart(self, market: int, code: str, date: int = None) -> pd.DataFrame:
         from datetime import date as date_cls
 
-        query_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
+        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
         chart = await self._execute(SymbolTickChartCmd(market, code, query_date))
         return pd.DataFrame(_flatten_tick_chart(chart))
 
-    async def get_tick_charts(
-        self,
-        market: int,
-        code: str,
-        date: int = None,
-        days: int = 5,
-    ) -> pd.DataFrame:
+    async def get_tick_charts(self, market: int, code: str, date: int = None, days: int = 5) -> pd.DataFrame:
         from datetime import date as date_cls
 
-        start_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
+        start_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
         chart = await self._execute(TickChartsCmd(market, code, start_date, days))
         return pd.DataFrame(_flatten_multi_tick_chart(chart))
 
@@ -3104,32 +2387,17 @@ class AsyncMacClient:
     # 逐笔成交
     # ------------------------------------------------------------------ #
 
-    async def get_transactions(
-        self,
-        market: int,
-        code: str,
-        count: int = 2000,
-        start: int = 0,
-        date: int = None,
-    ) -> pd.DataFrame:
+    async def get_transactions(self, market: int, code: str, count: int = 2000, start: int = 0, date: int = None) -> pd.DataFrame:
         from datetime import date as date_cls
 
-        query_date = (
-            date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None
-        )
-        all_items = await self._execute(
-            SymbolTransactionCmd(
-                market, code, query_date, start, min(count, _TRANSACTION_PAGE_SIZE)
-            )
-        )
+        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
+        all_items = await self._execute(SymbolTransactionCmd(market, code, query_date, start, min(count, _TRANSACTION_PAGE_SIZE)))
         fetched = len(all_items)
         offset = start + fetched
 
         while fetched < count:
             page_size = min(count - fetched, _TRANSACTION_PAGE_SIZE)
-            batch = await self._execute(
-                SymbolTransactionCmd(market, code, query_date, offset, page_size)
-            )
+            batch = await self._execute(SymbolTransactionCmd(market, code, query_date, offset, page_size))
             if not batch:
                 break
             all_items.extend(batch)
@@ -3152,11 +2420,7 @@ class AsyncMacClient:
     # 板块
     # ------------------------------------------------------------------ #
 
-    async def get_board_list(
-        self,
-        board_type: BoardType = BoardType.ALL,
-        count: int = 10000,
-    ) -> pd.DataFrame:
+    async def get_board_list(self, board_type: BoardType = BoardType.ALL, count: int = 10000) -> pd.DataFrame:
         all_items = await self._execute(BoardListCmd(board_type, 0, min(count, 150)))
         fetched = len(all_items)
         offset = fetched
@@ -3174,15 +2438,7 @@ class AsyncMacClient:
 
         return _to_df(all_items)
 
-    async def get_board_members(
-        self,
-        board_symbol: str,
-        count: int = 100000,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-        fields: object = PresetField.COMMON,
-        exclude_flags: list[FilterType] = None,
-    ) -> pd.DataFrame:
+    async def get_board_members(self, board_symbol: str, count: int = 100000, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, fields: object = PresetField.COMMON, exclude_flags: list[FilterType] = None) -> pd.DataFrame:
         board_code = _convert_board_code(board_symbol)
         all_quotes: list[MacQuoteField] = []
         fetched = 0
@@ -3190,17 +2446,8 @@ class AsyncMacClient:
 
         while fetched < count:
             page_size = min(count - fetched, _BOARD_MEMBERS_PAGE_SIZE)
-            batch = await self._execute(
-                BoardMembersQuotesCmd(
-                    board_code=board_code,
-                    sort_type=sort_type,
-                    start=offset,
-                    page_size=page_size,
-                    sort_order=sort_order,
-                    fields=fields,  # type: ignore[arg-type]
-                    exclude_flags=exclude_flags,
-                )
-            )
+            batch = await self._execute(BoardMembersQuotesCmd(board_code=board_code, sort_type=sort_type, start=offset, page_size=page_size, sort_order=sort_order, fields=fields,  # type: ignore[arg-type]
+                    exclude_flags=exclude_flags))
             if not batch:
                 break
             all_quotes = batch + all_quotes
@@ -3215,12 +2462,7 @@ class AsyncMacClient:
         items = await self._execute(SymbolBelongBoardCmd(market, code))
         return _to_df(items)
 
-    async def get_board_summary(
-        self,
-        board_symbol: str,
-        sort_type: SortType = SortType.CHANGE_PCT,
-        sort_order: SortOrder = SortOrder.DESC,
-    ) -> dict[str, Any]:
+    async def get_board_summary(self, board_symbol: str, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC) -> dict[str, Any]:
         """获取板块汇总：总成交金额、主力资金流向等（聚合成分股数据）。
 
         基于 ``get_board_members`` 获取全部成分股报价，对成交额和资金流字段求和。
@@ -3244,19 +2486,12 @@ class AsyncMacClient:
                 members         成分股明细 DataFrame
         """
 
-        fields = (
-            PresetField.BASIC
+        fields = (PresetField.BASIC
             + FieldBit.AMOUNT
             + FieldBit.MAIN_NET_AMOUNT
             + FieldBit.MAIN_NET_3D_AMOUNT
-            + FieldBit.MAIN_NET_5D_AMOUNT
-        )
-        df = await self.get_board_members(
-            board_symbol,
-            sort_type=sort_type,
-            sort_order=sort_order,
-            fields=fields,
-        )
+            + FieldBit.MAIN_NET_5D_AMOUNT)
+        df = await self.get_board_members(board_symbol, sort_type=sort_type, sort_order=sort_order, fields=fields)
 
         agg_keys = ("amount", "main_net_amount", "main_net_3d_amount", "main_net_5d_amount")
         numeric_cols = [c for c in agg_keys if c in df.columns]
@@ -3272,24 +2507,9 @@ class AsyncMacClient:
             up_count = down_count = 0
 
         return {
-            "member_count": len(df),
-            "amount": float(sums.get("amount", 0.0)),
-            "vol": int(df["vol"].sum()) if "vol" in df.columns else 0,
-            "main_net_amount": float(sums.get("main_net_amount", 0.0)),
-            "main_net_3d": float(sums.get("main_net_3d_amount", 0.0)),
-            "main_net_5d": float(sums.get("main_net_5d_amount", 0.0)),
-            "up_count": up_count,
-            "down_count": down_count,
-            "members": df,
-        }
+            "member_count": len(df), "amount": float(sums.get("amount", 0.0)), "vol": int(df["vol"].sum()) if "vol" in df.columns else 0, "main_net_amount": float(sums.get("main_net_amount", 0.0)), "main_net_3d": float(sums.get("main_net_3d_amount", 0.0)), "main_net_5d": float(sums.get("main_net_5d_amount", 0.0)), "up_count": up_count, "down_count": down_count, "members": df, }
 
-    async def get_board_ranking(
-        self,
-        board_type: BoardType = BoardType.HY,
-        top_n: int = 50,
-        sort_by: str = "change_pct",
-        ascending: bool = False,
-    ) -> pd.DataFrame:
+    async def get_board_ranking(self, board_type: BoardType = BoardType.HY, top_n: int = 50, sort_by: str = "change_pct", ascending: bool = False) -> pd.DataFrame:
         """获取板块涨跌幅排行榜（含成交额、成交量、资金流入流出、涨跌家数）。
 
         先通过 ``get_board_list`` 获取全部板块，再并发调用
@@ -3336,16 +2556,7 @@ class AsyncMacClient:
             code = str(row["code"])
             summary = await self.get_board_summary(code)
             return {
-                "code": code,
-                "name": row.get("name", ""),
-                "change_pct": round(float(row.get("change_pct", 0.0)), 2),
-                "amount": summary["amount"],
-                "vol": summary["vol"],
-                "main_net_amount": summary["main_net_amount"],
-                "up_count": summary["up_count"],
-                "down_count": summary["down_count"],
-                "member_count": summary["member_count"],
-            }
+                "code": code, "name": row.get("name", ""), "change_pct": round(float(row.get("change_pct", 0.0)), 2), "amount": summary["amount"], "vol": summary["vol"], "main_net_amount": summary["main_net_amount"], "up_count": summary["up_count"], "down_count": summary["down_count"], "member_count": summary["member_count"], }
 
         rows = await asyncio.gather(*[_fetch_row(row) for _, row in boards_df.iterrows()])
 
@@ -3354,14 +2565,7 @@ class AsyncMacClient:
             result = result.sort_values(sort_by, ascending=ascending).reset_index(drop=True)
         return result
 
-    async def get_board_change_ranking(
-        self,
-        board_type: BoardType = BoardType.HY,
-        target_date: int = None,
-        days: int = 20,
-        top_n: int = None,
-        ascending: bool = False,
-    ) -> pd.DataFrame:
+    async def get_board_change_ranking(self, board_type: BoardType = BoardType.HY, target_date: int = None, days: int = 20, top_n: int = None, ascending: bool = False) -> pd.DataFrame:
         """获取板块 N 日涨跌幅排行榜（异步）。
 
         对每个板块获取日 K 线，计算指定日期前 N 个交易日的涨跌幅并排行。
@@ -3386,24 +2590,14 @@ class AsyncMacClient:
         fetch_count = days + 10
         target_ts: pd.Timestamp = None
         if target_date is not None:
-            target_ts = pd.Timestamp(
-                year=target_date // 10000,
-                month=(target_date // 100) % 100,
-                day=target_date % 100,
-            )
+            target_ts = pd.Timestamp(year=target_date // 10000, month=(target_date // 100) % 100, day=target_date % 100)
 
         rows: list[dict[str, Any]] = []
         for _, row in boards_df.iterrows():
             board_code = str(row["code"])
             board_market = int(row["market"]) if "market" in row.index else 1
             try:
-                kline_df = await self.get_stock_kline(
-                    market=board_market,
-                    code=board_code,
-                    period=Period.DAILY,
-                    count=fetch_count,
-                    adjust=Adjust.NONE,
-                )
+                kline_df = await self.get_stock_kline(market=board_market, code=board_code, period=Period.DAILY, count=fetch_count, adjust=Adjust.NONE)
             except Exception:
                 _logger.debug("板块 %s K线获取失败，跳过", board_code, exc_info=True)
                 continue
@@ -3428,19 +2622,10 @@ class AsyncMacClient:
                 continue
 
             change_pct = round((close_end - close_start) / close_start * 100, 2)
-            rows.append(
-                {
-                    "code": board_code,
-                    "name": row.get("name", ""),
-                    "close_end": close_end,
-                    "close_start": close_start,
-                    "change_pct": change_pct,
-                }
-            )
+            rows.append({
+                    "code": board_code, "name": row.get("name", ""), "close_end": close_end, "close_start": close_start, "change_pct": change_pct, })
 
-        result = pd.DataFrame(
-            rows, columns=["code", "name", "close_end", "close_start", "change_pct"]
-        )
+        result = pd.DataFrame(rows, columns=["code", "name", "close_end", "close_start", "change_pct"])
         if not result.empty:
             result = result.sort_values("change_pct", ascending=ascending)
             if top_n is not None:
@@ -3470,12 +2655,7 @@ class AsyncMacClient:
     # 异动
     # ------------------------------------------------------------------ #
 
-    async def get_unusual(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 0,
-    ) -> pd.DataFrame:
+    async def get_unusual(self, market: int, start: int = 0, count: int = 0) -> pd.DataFrame:
         items = await self._execute(UnusualCmd(market, start, count or 600))
         return _to_df(items)
 
@@ -3487,11 +2667,7 @@ class AsyncMacClient:
         info = await self._execute(ServerInfoCmd())
         return _to_df(info)
 
-    async def get_kline_offset(
-        self,
-        offset: int = 0,
-        count: int = 128000,
-    ) -> pd.DataFrame:
+    async def get_kline_offset(self, offset: int = 0, count: int = 128000) -> pd.DataFrame:
         info = await self._execute(KlineOffsetCmd(offset, count))
         return _to_df(info)
 
@@ -3503,20 +2679,10 @@ class AsyncMacClient:
         meta = await self._execute(FileListCmd(filename))
         return _to_df(meta)
 
-    async def download_file_chunk(
-        self,
-        filename: str,
-        index: int,
-        offset: int,
-        size: int,
-    ) -> bytes:
+    async def download_file_chunk(self, filename: str, index: int, offset: int, size: int) -> bytes:
         return await self._execute(FileDownloadCmd(filename, index, offset, size))
 
-    async def download_file(
-        self,
-        filename: str,
-        filesize: int = 0,
-    ) -> bytearray:
+    async def download_file(self, filename: str, filesize: int = 0) -> bytearray:
         if filesize <= 0:
             meta = await self._execute(FileListCmd(filename))
             filesize = meta.size
@@ -3542,11 +2708,6 @@ class AsyncMacClient:
     # 扩展市场
     # ------------------------------------------------------------------ #
 
-    async def get_goods_list(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 600,
-    ) -> pd.DataFrame:
+    async def get_goods_list(self, market: int, start: int = 0, count: int = 600) -> pd.DataFrame:
         items = await self._execute(GoodsListCmd(market, start, count))
         return _to_df(items)

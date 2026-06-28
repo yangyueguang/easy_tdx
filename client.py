@@ -9,51 +9,25 @@ from codec import *
 _RETRY_DELAYS = (0.1, 0.5, 1.0, 2.0)
 _T = TypeVar("_T")
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-_DAILY_PLUS = frozenset(
-    {
-        KlineCategory.DAY,
-        KlineCategory.WEEK,
-        KlineCategory.MONTH,
-        KlineCategory.YEAR,
-        KlineCategory.YEAR_ALT,
-    }
-)
+_DAILY_PLUS = frozenset({
+        KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
 
 
 def _today_in_shanghai() -> int:
     return int(datetime.now(_SHANGHAI_TZ).strftime("%Y%m%d"))
 
 
-def _record_signature(
-    record: TransactionRecord,
-) -> tuple[int, int, float, int, int, int]:
-    return (
-        record.hour,
-        record.minute,
-        record.price,
-        record.vol,
-        record.buyorsell,
-        record.unknown_last,
-    )
+def _record_signature(record: TransactionRecord) -> tuple[int, int, float, int, int, int]:
+    return (record.hour, record.minute, record.price, record.vol, record.buyorsell, record.unknown_last)
 
 
-def _page_signature(
-    records: list[TransactionRecord],
-) -> tuple[tuple[int, int, float, int, int, int], tuple[int, int, float, int, int, int]]:
+def _page_signature(records: list[TransactionRecord]) -> tuple[tuple[int, int, float, int, int, int], tuple[int, int, float, int, int, int]]:
     return (_record_signature(records[0]), _record_signature(records[-1]))
 
 
 def _classify_fund_flow(records: list[TransactionRecord]) -> FundFlow:
     stats = {
-        "super_in": 0.0,
-        "large_in": 0.0,
-        "medium_in": 0.0,
-        "small_in": 0.0,
-        "super_out": 0.0,
-        "large_out": 0.0,
-        "medium_out": 0.0,
-        "small_out": 0.0,
-    }
+        "super_in": 0.0, "large_in": 0.0, "medium_in": 0.0, "small_in": 0.0, "super_out": 0.0, "large_out": 0.0, "medium_out": 0.0, "small_out": 0.0, }
 
     for record in records:
         amount = record.price * record.vol * 100.0
@@ -77,26 +51,12 @@ def _date_from_bar(bar: SecurityBar) -> int:
     return bar.year * 10000 + bar.month * 100 + bar.day
 
 
-def _historical_fund_flow_from_records(
-    date: int, records: list[TransactionRecord]
-) -> HistoricalFundFlow:
+def _historical_fund_flow_from_records(date: int, records: list[TransactionRecord]) -> HistoricalFundFlow:
     flow = _classify_fund_flow(records)
     year = date // 10000
     month = (date // 100) % 100
     day = date % 100
-    return HistoricalFundFlow(
-        year=year,
-        month=month,
-        day=day,
-        super_in=flow.super_in,
-        super_out=flow.super_out,
-        large_in=flow.large_in,
-        large_out=flow.large_out,
-        medium_in=flow.medium_in,
-        medium_out=flow.medium_out,
-        small_in=flow.small_in,
-        small_out=flow.small_out,
-    )
+    return HistoricalFundFlow(year=year, month=month, day=day, super_in=flow.super_in, super_out=flow.super_out, large_in=flow.large_in, large_out=flow.large_out, medium_in=flow.medium_in, medium_out=flow.medium_out, small_in=flow.small_in, small_out=flow.small_out)
 
 
 # ============================================================
@@ -129,16 +89,11 @@ def _load_cache() -> list[SecurityInfo]:
         return None
 
 
-def _save_cache(stocks: list[SecurityInfo]) -> None:
+def _save_cache(stocks: list[SecurityInfo]):
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     data = {
-        "updated": datetime.now().isoformat(),
-        "count": len(stocks),
-        "data": _serialize_stocks(stocks),
-    }
-    (_CACHE_DIR / "security_list_all.json").write_text(
-        json.dumps(data, ensure_ascii=False), "utf-8"
-    )
+        "updated": datetime.now().isoformat(), "count": len(stocks), "data": _serialize_stocks(stocks), }
+    (_CACHE_DIR / "security_list_all.json").write_text(json.dumps(data, ensure_ascii=False), "utf-8")
 
 
 class TdxClient:
@@ -155,14 +110,7 @@ class TdxClient:
             count = c.get_security_count(Market.SH)
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 15.0):
         self._host = host if host is not None else get_best_host()
         self._port = port if port is not None else get_port()
         self._timeout = timeout if timeout is not None else get_timeout()
@@ -175,15 +123,7 @@ class TdxClient:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = None,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 15.0,
-    ) -> "TdxClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = None, timeout: float = None, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 15.0) -> "TdxClient":
         """测量 hosts 中所有服务器延迟，选最低延迟的建立连接。
 
         自动将最佳主机保存到 config.json，后续连接默认使用该主机。
@@ -201,11 +141,7 @@ class TdxClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
         """测量多台服务器延迟，返回按延迟排序的 (host, seconds) 列表。"""
         if hosts is None:
             hosts = get_known_hosts()
@@ -217,20 +153,20 @@ class TdxClient:
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    def connect(self) -> None:
+    def connect(self):
         self._conn.connect()
         if self._heartbeat_interval > 0:
             self._conn.start_heartbeat(self._heartbeat_interval)
 
-    def close(self) -> None:
+    def close(self):
         self._conn.stop_heartbeat()
         self._conn.close()
 
-    def disconnect(self) -> None:
+    def disconnect(self):
         """Alias for close()."""
         self.close()
 
-    def ensure_connected(self) -> None:
+    def ensure_connected(self):
         """验证连接存活，断线则自动重建。"""
         try:
             self._execute(GetSecurityCountCmd(Market.SH))
@@ -246,12 +182,7 @@ class TdxClient:
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
     # ------------------------------------------------------------------ #
@@ -335,17 +266,11 @@ class TdxClient:
                 try:
                     stocks = self._execute(GetSecurityListCmd(market, start))
                 except Exception:
-                    log.warning(
-                        "%s 第 %d/%d 页获取失败，跳过", market.name, page_idx + 1, total_pages
-                    )
+                    log.warning("%s 第 %d/%d 页获取失败，跳过", market.name, page_idx + 1, total_pages)
                     continue
-                log.info(
-                    "%s 第 %d/%d 页: %d 条", market.name, page_idx + 1, total_pages, len(stocks)
-                )
+                log.info("%s 第 %d/%d 页: %d 条", market.name, page_idx + 1, total_pages, len(stocks))
                 for s in stocks:
-                    is_a_share = (market == Market.SH and s.code.startswith(("60", "68"))) or (
-                        market == Market.SZ and s.code.startswith(("00", "30"))
-                    )
+                    is_a_share = (market == Market.SH and s.code.startswith(("60", "68"))) or (market == Market.SZ and s.code.startswith(("00", "30")))
                     if is_a_share:
                         if s.code in industry_map:
                             s.industry_tdx, s.industry_sw = industry_map[s.code]
@@ -362,9 +287,7 @@ class TdxClient:
         """批量获取实时五档行情（最多80只/次）。"""
         return _to_df(self._execute(GetSecurityQuotesCmd(stocks)))
 
-    def get_price_limits(
-        self, market: Market, code: str, name: str, pre_close: float
-    ) -> tuple[float, float]:
+    def get_price_limits(self, market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
         """按当前交易状态计算涨跌停价。
 
         对上市初期不设涨跌幅限制的标的，会先用日 K 线条数估算已上市交易天数。
@@ -373,45 +296,23 @@ class TdxClient:
         no_limit_window_days = get_no_limit_window_days(market, code, name)
         if no_limit_window_days > 0:
             try:
-                bars = self._execute(
-                    GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, no_limit_window_days + 1)
-                )
+                bars = self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, no_limit_window_days + 1))
                 listed_days = len(bars)
             except Exception:
                 listed_days = None
 
-        return compute_price_limits(
-            market,
-            code,
-            name,
-            pre_close,
-            listed_days=listed_days,
-        )
+        return compute_price_limits(market, code, name, pre_close, listed_days=listed_days)
 
     # ------------------------------------------------------------------ #
     # K 线
     # ------------------------------------------------------------------ #
 
-    def get_security_bars(
-        self,
-        market: Market,
-        code: str,
-        category: KlineCategory,
-        start: int,
-        count: int = 800,
-    ) -> pd.DataFrame:
+    def get_security_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         """获取 K 线数据（最多800条/次，按 start 分页）。"""
         df = _to_df(self._execute(GetSecurityBarsCmd(market, code, category, start, count)))
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
-    def get_index_bars(
-        self,
-        market: Market,
-        code: str,
-        category: KlineCategory,
-        start: int,
-        count: int = 800,
-    ) -> pd.DataFrame:
+    def get_index_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         """获取指数 K 线数据。"""
         df = _to_df(self._execute(GetIndexBarsCmd(market, code, category, start, count)))
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
@@ -435,16 +336,12 @@ class TdxClient:
     # 逐笔成交
     # ------------------------------------------------------------------ #
 
-    def get_transaction_data(
-        self, market: Market, code: str, start: int, count: int = 800
-    ) -> pd.DataFrame:
+    def get_transaction_data(self, market: Market, code: str, start: int, count: int = 800) -> pd.DataFrame:
         """获取当日逐笔成交（分页）。"""
         df = _to_df(self._execute(GetTransactionDataCmd(market, code, start, count)))
         return _merge_txn_datetime(df, _today_in_shanghai())
 
-    def get_history_transaction_data(
-        self, market: Market, code: str, date: int, start: int, count: int = 800
-    ) -> pd.DataFrame:
+    def get_history_transaction_data(self, market: Market, code: str, date: int, start: int, count: int = 800) -> pd.DataFrame:
         """获取历史逐笔成交（date: YYYYMMDD，分页）。"""
         df = _to_df(self._execute(GetHistoryTransactionDataCmd(market, code, date, start, count)))
         return _merge_txn_datetime(df, date)
@@ -465,9 +362,7 @@ class TdxClient:
         """获取公司信息文件目录。"""
         return _to_df(self._execute(GetCompanyInfoCategoryCmd(market, code)))
 
-    def get_company_info_content(
-        self, market: Market, code: str, filename: str, offset: int, length: int
-    ) -> str:
+    def get_company_info_content(self, market: Market, code: str, filename: str, offset: int, length: int) -> str:
         """读取公司信息文本。"""
         return self._execute(GetCompanyInfoContentCmd(market, code, filename, offset, length))
 
@@ -507,9 +402,7 @@ class TdxClient:
         return bytes(full_data)
 
     @staticmethod
-    def _download_from_host(
-        host: str, filename: str, port: int = 7709, timeout: float = 15.0
-    ) -> bytes:
+    def _download_from_host(host: str, filename: str, port: int = 7709, timeout: float = 15.0) -> bytes:
         """从指定服务器创建临时连接并下载文件。"""
         conn = TdxConnection(host, port, timeout)
         try:
@@ -579,9 +472,7 @@ class TdxClient:
         records: list[FinancialRecord] = []
         for code, market_byte, rdate, fields in raw_records:
             market = Market.SH if market_byte == 1 else Market.SZ
-            records.append(
-                FinancialRecord(code=code, market=market, report_date=rdate, fields=fields)
-            )
+            records.append(FinancialRecord(code=code, market=market, report_date=rdate, fields=fields))
         return _to_df(records)
 
     def get_market_stat(self) -> pd.DataFrame:
@@ -592,11 +483,7 @@ class TdxClient:
             用于保证计数守恒，不应视为协议已明确验证的停牌字段。
         """
         # 通达信中 880005 是全市场行情统计，880001 是总市值指数，880006 是涨跌停统计
-        quotes = self._execute(
-            GetSecurityQuotesCmd(
-                [(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")]
-            )
-        )
+        quotes = self._execute(GetSecurityQuotesCmd([(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")]))
         if not quotes:
             raise RuntimeError("无法获取市场统计数据")
         q = quotes[0]
@@ -607,34 +494,14 @@ class TdxClient:
         market_cap = quotes[1].price * 1e10 if len(quotes) > 1 else 0.0
         limit_down = int(quotes[2].open) if len(quotes) > 2 else 0
         limit_up = int(quotes[2].price) if len(quotes) > 2 else 0
-        return _to_df(
-            MarketStat(
-                up_count=up,
-                down_count=down,
-                neutral_count=neutral,
-                suspended_count=max(0, total - up - down - neutral),
-                total_count=total,
-                total_amount=q.amount,
-                total_volume=q.vol,
-                total_market_cap=market_cap,
-                limit_up_count=limit_up,
-                limit_down_count=limit_down,
-            )
-        )
+        return _to_df(MarketStat(up_count=up, down_count=down, neutral_count=neutral, suspended_count=max(0, total - up - down - neutral), total_count=total, total_amount=q.amount, total_volume=q.vol, total_market_cap=market_cap, limit_up_count=limit_up, limit_down_count=limit_down))
 
-    def _collect_transaction_records(
-        self,
-        fetch_page: Callable[[int, int], list[TransactionRecord]],
-        page_size: int,
-        max_start: int = 10000,
-    ) -> list[TransactionRecord]:
+    def _collect_transaction_records(self, fetch_page: Callable[[int, int], list[TransactionRecord]], page_size: int, max_start: int = 10000) -> list[TransactionRecord]:
         all_recs: list[TransactionRecord] = []
         seen_sig: set[tuple[int, int, float, int, int, int]] = set()
         seen_page_sigs: set[
             tuple[
-                tuple[int, int, float, int, int, int],
-                tuple[int, int, float, int, int, int],
-            ]
+                tuple[int, int, float, int, int, int], tuple[int, int, float, int, int, int], ]
         ] = set()
         start = 0
 
@@ -667,17 +534,10 @@ class TdxClient:
 
     def get_fund_flow(self, market: Market, code: str) -> pd.DataFrame:
         """获取个股当日资金流向分布（基于 L1 逐笔数据统计）。"""
-        records = self._collect_transaction_records(
-            lambda start, page_size: self._execute(
-                GetTransactionDataCmd(market, code, start, page_size)
-            ),
-            2000,
-        )
+        records = self._collect_transaction_records(lambda start, page_size: self._execute(GetTransactionDataCmd(market, code, start, page_size)), 2000)
         return _to_df(_classify_fund_flow(records))
 
-    def get_history_fund_flow(
-        self, market: Market, code: str, start: int, count: int
-    ) -> pd.DataFrame:
+    def get_history_fund_flow(self, market: Market, code: str, start: int, count: int) -> pd.DataFrame:
         """获取个股历史日线资金流向序列。
 
         优先走 Category 22 直连接口；若服务器返回空列表，则自动回退为
@@ -694,12 +554,7 @@ class TdxClient:
         results: list[HistoricalFundFlow] = []
         for bar in bars:
             date = _date_from_bar(bar)
-            records = self._collect_transaction_records(
-                lambda page_start, page_size: self._execute(
-                    GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)
-                ),
-                800,
-            )
+            records = self._collect_transaction_records(lambda page_start, page_size: self._execute(GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)), 800)
             results.append(_historical_fund_flow_from_records(date, records))
         return _to_df(results)
 
@@ -721,14 +576,7 @@ class AsyncTdxClient:
         单个 AsyncTdxClient 仅维护一条 TCP 连接；并发调用会在连接内串行执行。
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None, auto_reconnect: bool = True, heartbeat_interval: float = 60.0):
         self._host = host if host is not None else get_best_host()
         self._port = port if port is not None else get_port()
         self._timeout = timeout if timeout is not None else get_timeout()
@@ -739,15 +587,7 @@ class AsyncTdxClient:
         self._heartbeat_task: asyncio.Task[None] = None
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = None,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> "AsyncTdxClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = None, timeout: float = None, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 60.0) -> "AsyncTdxClient":
         """测量 hosts 中所有服务器延迟，选最低延迟的建立连接。
 
         自动将最佳主机保存到 config.json。
@@ -764,11 +604,7 @@ class AsyncTdxClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = None,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
         """测量多台服务器延迟，返回按延迟排序的 (host, seconds) 列表。"""
         if hosts is None:
             hosts = get_known_hosts()
@@ -776,11 +612,11 @@ class AsyncTdxClient:
             port = get_port()
         return ping_all(hosts, port, timeout)
 
-    async def connect(self) -> None:
+    async def connect(self):
         await self._conn.connect()
         self._start_heartbeat()
 
-    async def close(self) -> None:
+    async def close(self):
         await self._stop_heartbeat()
         await self._conn.close()
 
@@ -788,15 +624,10 @@ class AsyncTdxClient:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
-    def _start_heartbeat(self) -> None:
+    def _start_heartbeat(self):
         """启动后台心跳任务。"""
         if self._heartbeat_interval <= 0:
             return
@@ -804,7 +635,7 @@ class AsyncTdxClient:
             self._heartbeat_task.cancel()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-    async def _stop_heartbeat(self) -> None:
+    async def _stop_heartbeat(self):
         """停止并清理心跳任务。"""
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
@@ -814,7 +645,7 @@ class AsyncTdxClient:
                 pass
             self._heartbeat_task = None
 
-    async def _heartbeat_loop(self) -> None:
+    async def _heartbeat_loop(self):
         """心跳循环：定期发送轻量级请求保活。"""
         while True:
             try:
@@ -896,17 +727,11 @@ class AsyncTdxClient:
                 try:
                     stocks = await self._execute(GetSecurityListCmd(market, start))
                 except Exception:
-                    log.warning(
-                        "%s 第 %d/%d 页获取失败，跳过", market.name, page_idx + 1, total_pages
-                    )
+                    log.warning("%s 第 %d/%d 页获取失败，跳过", market.name, page_idx + 1, total_pages)
                     continue
-                log.info(
-                    "%s 第 %d/%d 页: %d 条", market.name, page_idx + 1, total_pages, len(stocks)
-                )
+                log.info("%s 第 %d/%d 页: %d 条", market.name, page_idx + 1, total_pages, len(stocks))
                 for s in stocks:
-                    is_a_share = (market == Market.SH and s.code.startswith(("60", "68"))) or (
-                        market == Market.SZ and s.code.startswith(("00", "30"))
-                    )
+                    is_a_share = (market == Market.SH and s.code.startswith(("60", "68"))) or (market == Market.SZ and s.code.startswith(("00", "30")))
                     if is_a_share:
                         if s.code in industry_map:
                             s.industry_tdx, s.industry_sw = industry_map[s.code]
@@ -920,48 +745,24 @@ class AsyncTdxClient:
     async def get_security_quotes(self, stocks: list[tuple[Market, str]]) -> pd.DataFrame:
         return _to_df(await self._execute(GetSecurityQuotesCmd(stocks)))
 
-    async def get_price_limits(
-        self, market: Market, code: str, name: str, pre_close: float
-    ) -> tuple[float, float]:
+    async def get_price_limits(self, market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
         """按当前交易状态计算涨跌停价。"""
         listed_days: int = None
         no_limit_window_days = get_no_limit_window_days(market, code, name)
         if no_limit_window_days > 0:
             try:
-                bars = await self._execute(
-                    GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, no_limit_window_days + 1)
-                )
+                bars = await self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, no_limit_window_days + 1))
                 listed_days = len(bars)
             except Exception:
                 listed_days = None
 
-        return compute_price_limits(
-            market,
-            code,
-            name,
-            pre_close,
-            listed_days=listed_days,
-        )
+        return compute_price_limits(market, code, name, pre_close, listed_days=listed_days)
 
-    async def get_security_bars(
-        self,
-        market: Market,
-        code: str,
-        category: KlineCategory,
-        start: int,
-        count: int = 800,
-    ) -> pd.DataFrame:
+    async def get_security_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         df = _to_df(await self._execute(GetSecurityBarsCmd(market, code, category, start, count)))
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
-    async def get_index_bars(
-        self,
-        market: Market,
-        code: str,
-        category: KlineCategory,
-        start: int,
-        count: int = 800,
-    ) -> pd.DataFrame:
+    async def get_index_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
         df = _to_df(await self._execute(GetIndexBarsCmd(market, code, category, start, count)))
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
@@ -970,24 +771,16 @@ class AsyncTdxClient:
         bars = await self._execute(GetHistoryMinuteTimeDataCmd(market, code, today))
         return _add_minute_datetime(_to_df(bars), today)
 
-    async def get_history_minute_time_data(
-        self, market: Market, code: str, date: int
-    ) -> pd.DataFrame:
+    async def get_history_minute_time_data(self, market: Market, code: str, date: int) -> pd.DataFrame:
         bars = await self._execute(GetHistoryMinuteTimeDataCmd(market, code, date))
         return _add_minute_datetime(_to_df(bars), date)
 
-    async def get_transaction_data(
-        self, market: Market, code: str, start: int, count: int = 800
-    ) -> pd.DataFrame:
+    async def get_transaction_data(self, market: Market, code: str, start: int, count: int = 800) -> pd.DataFrame:
         df = _to_df(await self._execute(GetTransactionDataCmd(market, code, start, count)))
         return _merge_txn_datetime(df, _today_in_shanghai())
 
-    async def get_history_transaction_data(
-        self, market: Market, code: str, date: int, start: int, count: int = 800
-    ) -> pd.DataFrame:
-        df = _to_df(
-            await self._execute(GetHistoryTransactionDataCmd(market, code, date, start, count))
-        )
+    async def get_history_transaction_data(self, market: Market, code: str, date: int, start: int, count: int = 800) -> pd.DataFrame:
+        df = _to_df(await self._execute(GetHistoryTransactionDataCmd(market, code, date, start, count)))
         return _merge_txn_datetime(df, date)
 
     async def get_xdxr_info(self, market: Market, code: str) -> pd.DataFrame:
@@ -999,9 +792,7 @@ class AsyncTdxClient:
     async def get_company_info_category(self, market: Market, code: str) -> pd.DataFrame:
         return _to_df(await self._execute(GetCompanyInfoCategoryCmd(market, code)))
 
-    async def get_company_info_content(
-        self, market: Market, code: str, filename: str, offset: int, length: int
-    ) -> str:
+    async def get_company_info_content(self, market: Market, code: str, filename: str, offset: int, length: int) -> str:
         return await self._execute(GetCompanyInfoContentCmd(market, code, filename, offset, length))
 
     async def get_block_info(self, filename: str) -> pd.DataFrame:
@@ -1034,9 +825,7 @@ class AsyncTdxClient:
         return bytes(full_data)
 
     @staticmethod
-    async def _async_download_from_host(
-        host: str, filename: str, port: int = 7709, timeout: float = 15.0
-    ) -> bytes:
+    async def _async_download_from_host(host: str, filename: str, port: int = 7709, timeout: float = 15.0) -> bytes:
         """从指定服务器创建临时异步连接并下载文件。"""
         conn = AsyncTdxConnection(host, port, timeout)
         try:
@@ -1095,9 +884,7 @@ class AsyncTdxClient:
         records: list[FinancialRecord] = []
         for code, market_byte, rdate, fields in raw_records:
             market = Market.SH if market_byte == 1 else Market.SZ
-            records.append(
-                FinancialRecord(code=code, market=market, report_date=rdate, fields=fields)
-            )
+            records.append(FinancialRecord(code=code, market=market, report_date=rdate, fields=fields))
         return _to_df(records)
 
     async def get_market_stat(self) -> pd.DataFrame:
@@ -1108,11 +895,7 @@ class AsyncTdxClient:
             用于保证计数守恒，不应视为协议已明确验证的停牌字段。
         """
         # 通达信中 880005 是全市场行情统计，880001 是总市值指数，880006 是涨跌停统计
-        quotes = await self._execute(
-            GetSecurityQuotesCmd(
-                [(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")]
-            )
-        )
+        quotes = await self._execute(GetSecurityQuotesCmd([(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")]))
         if not quotes:
             raise RuntimeError("无法获取市场统计数据")
         q = quotes[0]
@@ -1123,34 +906,14 @@ class AsyncTdxClient:
         market_cap = quotes[1].price * 1e10 if len(quotes) > 1 else 0.0
         limit_down = int(quotes[2].open) if len(quotes) > 2 else 0
         limit_up = int(quotes[2].price) if len(quotes) > 2 else 0
-        return _to_df(
-            MarketStat(
-                up_count=up,
-                down_count=down,
-                neutral_count=neutral,
-                suspended_count=max(0, total - up - down - neutral),
-                total_count=total,
-                total_amount=q.amount,
-                total_volume=q.vol,
-                total_market_cap=market_cap,
-                limit_up_count=limit_up,
-                limit_down_count=limit_down,
-            )
-        )
+        return _to_df(MarketStat(up_count=up, down_count=down, neutral_count=neutral, suspended_count=max(0, total - up - down - neutral), total_count=total, total_amount=q.amount, total_volume=q.vol, total_market_cap=market_cap, limit_up_count=limit_up, limit_down_count=limit_down))
 
-    async def _collect_transaction_records(
-        self,
-        fetch_page: Callable[[int, int], Awaitable[list[TransactionRecord]]],
-        page_size: int,
-        max_start: int = 10000,
-    ) -> list[TransactionRecord]:
+    async def _collect_transaction_records(self, fetch_page: Callable[[int, int], Awaitable[list[TransactionRecord]]], page_size: int, max_start: int = 10000) -> list[TransactionRecord]:
         all_recs: list[TransactionRecord] = []
         seen_sig: set[tuple[int, int, float, int, int, int]] = set()
         seen_page_sigs: set[
             tuple[
-                tuple[int, int, float, int, int, int],
-                tuple[int, int, float, int, int, int],
-            ]
+                tuple[int, int, float, int, int, int], tuple[int, int, float, int, int, int], ]
         ] = set()
         start = 0
 
@@ -1183,17 +946,10 @@ class AsyncTdxClient:
 
     async def get_fund_flow(self, market: Market, code: str) -> pd.DataFrame:
         """获取个股当日资金流向分布（基于 L1 逐笔数据统计）。"""
-        records = await self._collect_transaction_records(
-            lambda start, page_size: self._execute(
-                GetTransactionDataCmd(market, code, start, page_size)
-            ),
-            2000,
-        )
+        records = await self._collect_transaction_records(lambda start, page_size: self._execute(GetTransactionDataCmd(market, code, start, page_size)), 2000)
         return _to_df(_classify_fund_flow(records))
 
-    async def get_history_fund_flow(
-        self, market: Market, code: str, start: int, count: int
-    ) -> pd.DataFrame:
+    async def get_history_fund_flow(self, market: Market, code: str, start: int, count: int) -> pd.DataFrame:
         """获取个股历史日线资金流向序列。
 
         优先走 Category 22 直连接口；若服务器返回空列表，则自动回退为
@@ -1206,17 +962,10 @@ class AsyncTdxClient:
         if direct:
             return _to_df(direct)
 
-        bars = await self._execute(
-            GetSecurityBarsCmd(market, code, KlineCategory.DAY, start, count)
-        )
+        bars = await self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, start, count))
         results: list[HistoricalFundFlow] = []
         for bar in bars:
             date = _date_from_bar(bar)
-            records = await self._collect_transaction_records(
-                lambda page_start, page_size: self._execute(
-                    GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)
-                ),
-                800,
-            )
+            records = await self._collect_transaction_records(lambda page_start, page_size: self._execute(GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)), 800)
             results.append(_historical_fund_flow_from_records(date, records))
         return _to_df(results)

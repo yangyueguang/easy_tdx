@@ -375,10 +375,7 @@ Python API：
 ```python
 from backtest import CombinationRunner
 
-runner = CombinationRunner(
-    strategy_classes=[MACDStrategy, RSIStrategy, BollingerStrategy],
-    df=df, cash=100000,
-)
+runner = CombinationRunner(strategy_classes=[MACDStrategy, RSIStrategy, BollingerStrategy], df=df, cash=100000)
 results = runner.screen(combo_sizes=(2, 3), mode="MAJORITY")
 for r in results[:5]:
     print(f"{r.name}: 收益={r.result.performance['total_return']:.2%}")
@@ -568,17 +565,11 @@ report = FactorAnalyzer(clean, forward_returns).full_report("momentum_20d")
 print(f"IC均值={report.mean_ic:.4f} ICIR={report.icir:.4f}")
 
 # 组合回测
-result = RebalanceEngine(
-    FactorWeightedOptimizer(), factor_name="momentum_20d", n_stocks=50, cash=1_000_000,
-).run(data, start_date=20230101, end_date=20240101)
+result = RebalanceEngine(FactorWeightedOptimizer(), factor_name="momentum_20d", n_stocks=50, cash=1_000_000).run(data, start_date=20230101, end_date=20240101)
 print(f"年化={result.performance['annual_return']:.2%}")
 
 # 高级回测（滑点 + 执行仿真）
-engine = BacktestEngine(
-    MyStrategy, cash=1_000_000,
-    slippage_model=SquareRootSlippage(impact_coeff=0.1),
-    execution_model=TWAPExecution(n_bars=3),
-)
+engine = BacktestEngine(MyStrategy, cash=1_000_000, slippage_model=SquareRootSlippage(impact_coeff=0.1), execution_model=TWAPExecution(n_bars=3))
 ```
 
 详细用法和完整工作流示例：**[docs/quantitative-guide.md](docs/quantitative-guide.md)**
@@ -612,13 +603,8 @@ easy-tdx screen scan --strategy strategies/rsi_reversal.py --cache scan_cache.js
 
 ```json
 {
-  "scan_time": "2026-06-10T18:30:00",
-  "strategy": "RSIStrategy",
-  "total_scanned": 4832,
-  "total_signals": 37,
-  "signals": [
-    {"code": "000001", "market": "SZ", "signal_date": 20260610, "last_close": 12.35},
-    {"code": "600519", "market": "SH", "signal_date": 20260610, "last_close": 1800.0}
+  "scan_time": "2026-06-10T18:30:00", "strategy": "RSIStrategy", "total_scanned": 4832, "total_signals": 37, "signals": [
+    {"code": "000001", "market": "SZ", "signal_date": 20260610, "last_close": 12.35}, {"code": "600519", "market": "SH", "signal_date": 20260610, "last_close": 1800.0}
   ]
 }
 ```
@@ -712,16 +698,8 @@ easy-tdx screen strength --universe sz --top 30 --output sz_strength.json
 
 ```json
 {
-  "scan_time": "2026-06-25T10:30:00",
-  "preset": "steady",
-  "preset_desc": "中长期稳健强势：权重偏 60 日，波动率惩罚...",
-  "data_date": 20260624,
-  "total_ranked": 50,
-  "ranking": [
-    {"rank": 1, "code": "300308", "market": "SZ", "name": "中际旭创",
-     "last_close": 85.20, "last_date": 20260624,
-     "ret_5": 0.0812, "ret_20": 0.1534, "ret_60": 0.3021,
-     "vol_20": 0.0180, "strength": 9.52}
+  "scan_time": "2026-06-25T10:30:00", "preset": "steady", "preset_desc": "中长期稳健强势：权重偏 60 日，波动率惩罚...", "data_date": 20260624, "total_ranked": 50, "ranking": [
+    {"rank": 1, "code": "300308", "market": "SZ", "name": "中际旭创", "last_close": 85.20, "last_date": 20260624, "ret_5": 0.0812, "ret_20": 0.1534, "ret_60": 0.3021, "vol_20": 0.0180, "strength": 9.52}
   ]
 }
 ```
@@ -794,11 +772,7 @@ easy-tdx indicator BIAS_SIGNAL,MACD,KDJ -m SH -c 600519 --count 30 --table
 from easy_tdx import MacClient, Market
 
 with MacClient.from_best_host() as c:
-    df = c.get_stock_kline_with_indicators(
-        Market.SH, "600519",
-        indicators=["BIAS_SIGNAL"],
-        count=60,
-    )
+    df = c.get_stock_kline_with_indicators(Market.SH, "600519", indicators=["BIAS_SIGNAL"], count=60)
     # df 包含: datetime, open, close, high, low, vol, amount
     #         + BS_X, BS_SMA, BS_LMA
 ```
@@ -810,11 +784,7 @@ with MacClient.from_best_host() as c:
 from easy_tdx import MacClient, Market
 
 with MacClient.from_best_host() as c:
-    df = c.get_stock_kline_with_indicators(
-        Market.SH, "600519",
-        indicators=["ZHUOYAO"],
-        count=30,
-    )
+    df = c.get_stock_kline_with_indicators(Market.SH, "600519", indicators=["ZHUOYAO"], count=30)
     # df 包含: datetime, open, close, high, low, vol, amount
     #         + ZY_LONG, ZY_MID, ZY_SHORT, ZY_TREND
 ```
@@ -1084,11 +1054,7 @@ with MacClient.from_best_host() as c:
     df = c.get_stock_quotes([(Market.SH, "600519"), (Market.SZ, "000858")])
 
     # 市场分类排序报价
-    df = c.get_stock_quotes_list(
-        Category.A, count=20,
-        sort_type=SortType.CHANGE_PCT,
-        sort_order=SortOrder.DESC,
-    )
+    df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
 ```
 
 返回列：`market, code, name` + 动态字段（`pre_close, open, high, low, close, vol, amount, turnover, vol_ratio` 等）。
@@ -1117,21 +1083,12 @@ from indicator import compute_indicators, list_indicators
 
 with MacClient.from_best_host() as c:
     # 便捷方法：获取 K 线 + 计算指标一步完成（默认前复权）
-    df = c.get_stock_kline_with_indicators(
-        Market.SH, "600519",
-        indicators=["MACD", "KDJ", "RSI", "BOLL"],
-        count=30,
-    )
+    df = c.get_stock_kline_with_indicators(Market.SH, "600519", indicators=["MACD", "KDJ", "RSI", "BOLL"], count=30)
     # df 包含: datetime, open, close, high, low, vol, amount
-    #         + MACD_DIF, MACD_DEA, MACD_HIST, KDJ_K, KDJ_D, KDJ_J, RSI,
-    #           BOLL_UPPER, BOLL_MID, BOLL_LOWER
+    #         + MACD_DIF, MACD_DEA, MACD_HIST, KDJ_K, KDJ_D, KDJ_J, RSI, #           BOLL_UPPER, BOLL_MID, BOLL_LOWER
 
     # 自定义指标参数
-    df = c.get_stock_kline_with_indicators(
-        Market.SH, "600519",
-        indicators=["MACD"],
-        params={"MACD": {"SHORT": 10, "LONG": 22}},
-    )
+    df = c.get_stock_kline_with_indicators(Market.SH, "600519", indicators=["MACD"], params={"MACD": {"SHORT": 10, "LONG": 22}})
 
     # 独立使用：对已有 DataFrame 计算指标
     raw = c.get_stock_kline(Market.SH, "600519", Period.DAILY, count=200, adjust=Adjust.QFQ)
@@ -1211,15 +1168,12 @@ with MacClient.from_best_host() as c:
     # 板块汇总：成交额、主力净流入、涨跌家数
     summary = c.get_board_summary("881001")
     # summary = {
-    #     "member_count": 82,
-    #     "amount": 5823456000.0,        # 板块总成交额（元）
+    #     "member_count": 82, #     "amount": 5823456000.0,        # 板块总成交额（元）
     #     "vol": 412356789,              # 板块总成交量（股）
     #     "main_net_amount": -123456.0,  # 当日主力净流入
     #     "main_net_3d": -567890.0,      # 近3日主力净流入
     #     "main_net_5d": -234567.0,      # 近5日主力净流入
-    #     "up_count": 45,
-    #     "down_count": 37,
-    #     "members": DataFrame(...),     # 成分股明细
+    #     "up_count": 45, #     "down_count": 37, #     "members": DataFrame(...),     # 成分股明细
     # }
 
     # 板块涨跌幅排行榜

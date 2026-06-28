@@ -16,8 +16,7 @@ _T = TypeVar("_T")
 
 from typing import Final
 
-EX_SETUP_CMD: Final[bytes] = bytes.fromhex(
-    "01 01 48 65 00 01 52 00 52 00 54 24"
+EX_SETUP_CMD: Final[bytes] = bytes.fromhex("01 01 48 65 00 01 52 00 52 00 54 24"
     "1f 32 c6 e5 d5 3d fb 41"
     "1f 32 c6 e5 d5 3d fb 41"
     "1f 32 c6 e5 d5 3d fb 41"
@@ -26,8 +25,7 @@ EX_SETUP_CMD: Final[bytes] = bytes.fromhex(
     "1f 32 c6 e5 d5 3d fb 41"
     "1f 32 c6 e5 d5 3d fb 41"
     "cc e1 6d ff d5 ba 3f b8"
-    "cb c5 7a 05 4f 77 48 ea"
-)
+    "cb c5 7a 05 4f 77 48 ea")
 """MAC EX 扩展行情登录命令（msg_id=0x2454）。
 
 MAC EX 服务器（端口 7727）在数据查询前要求先完成 Login，
@@ -50,18 +48,7 @@ KNOWN_EX_HOSTS = get_ex_hosts()
 
 # 已知扩展行情市场代码
 KNOWN_EX_MARKETS: dict[int, str] = {
-    0: "深圳",
-    1: "上海",
-    28: "郑州商品",
-    29: "大连商品",
-    30: "上海期货",
-    31: "香港主板",
-    47: "中金所",
-    48: "香港创业板",
-    49: "香港基金",
-    71: "沪港通",
-    74: "外盘",
-}
+    0: "深圳", 1: "上海", 28: "郑州商品", 29: "大连商品", 30: "上海期货", 31: "香港主板", 47: "中金所", 48: "香港创业板", 49: "香港基金", 71: "沪港通", 74: "外盘", }
 
 # MAC 协议扩展行情服务器（端口 7727）
 MAC_EX_HOSTS: list[str] = get_mac_ex_hosts()
@@ -177,11 +164,7 @@ class ExTransactionRecord:
     nature: int
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
-def ping_ex_host(
-    host: str,
-    port: int = _DEFAULT_EX_PORT,
-    timeout: float = 5.0,
-) -> float:
+def ping_ex_host(host: str, port: int = _DEFAULT_EX_PORT, timeout: float = 5.0) -> float:
     """测量扩展行情服务器延迟（秒）。通过发送 get_instrument_count 验证可用性。"""
     t0 = time.monotonic()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -204,11 +187,7 @@ def ping_ex_host(
             pass
 
 
-def ping_ex_all(
-    hosts: list[str] = None,
-    port: int = _DEFAULT_EX_PORT,
-    timeout: float = 5.0,
-) -> list[tuple[str, float]]:
+def ping_ex_all(hosts: list[str] = None, port: int = _DEFAULT_EX_PORT, timeout: float = 5.0) -> list[tuple[str, float]]:
     """并发测量多台扩展行情服务器延迟，按延迟排序返回。"""
     import concurrent.futures
 
@@ -246,14 +225,7 @@ class ExTdxConnection:
         以兼容 MAC EX 服务器（需要 head_flag=0x01）。
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = _DEFAULT_TIMEOUT,
-        *,
-        mac_ex_mode: bool = False,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = _DEFAULT_EX_PORT, timeout: float = _DEFAULT_TIMEOUT, *, mac_ex_mode: bool = False):
         self.host = host if host is not None else get_best_ex_host()
         self.port = port
         self.timeout = timeout
@@ -261,7 +233,7 @@ class ExTdxConnection:
         self._sock: socket.socket = None
         self._lock = threading.Lock()
 
-    def connect(self) -> None:
+    def connect(self):
         """建立 TCP 连接。扩展行情服务器不需要握手命令。"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(self.timeout)
@@ -272,7 +244,7 @@ class ExTdxConnection:
             raise TdxConnectionError(f"无法连接 {self.host}:{self.port}: {e}") from e
         self._sock = sock
 
-    def close(self) -> None:
+    def close(self):
         if self._sock is not None:
             try:
                 self._sock.close()
@@ -302,12 +274,7 @@ class ExTdxConnection:
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
     def _recv_exact(self, n: int) -> bytes:
@@ -328,14 +295,7 @@ class AsyncExTdxConnection:
         以兼容 MAC EX 服务器（需要 head_flag=0x01）。
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = 7727,
-        timeout: float = 15,
-        *,
-        mac_ex_mode: bool = False,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = 7727, timeout: float = 15, *, mac_ex_mode: bool = False):
         self.host = host if host is not None else get_best_ex_host()
         self.port = port
         self.timeout = timeout
@@ -344,13 +304,13 @@ class AsyncExTdxConnection:
         self._writer: asyncio.StreamWriter = None
         self._io_lock = asyncio.Lock()
 
-    async def connect(self) -> None:
+    async def connect(self):
         async with self._io_lock:
             if self._writer is not None and not self._writer.is_closing():
                 return
             await self._connect_unlocked()
 
-    async def close(self) -> None:
+    async def close(self):
         async with self._io_lock:
             await self._close_unlocked()
 
@@ -377,18 +337,15 @@ class AsyncExTdxConnection:
             body = decompress_body(header, raw_body)
             return cmd.parse_response(body)
 
-    async def _connect_unlocked(self) -> None:
+    async def _connect_unlocked(self):
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port),
-                timeout=self.timeout,
-            )
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(self.host, self.port), timeout=self.timeout)
         except (OSError, asyncio.TimeoutError) as e:
             raise TdxConnectionError(f"无法连接 {self.host}:{self.port}: {e}") from e
         self._reader = reader
         self._writer = writer
 
-    async def _close_unlocked(self) -> None:
+    async def _close_unlocked(self):
         if self._writer is not None:
             try:
                 self._writer.close()
@@ -402,27 +359,19 @@ class AsyncExTdxConnection:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
     async def _recv_exact(self, n: int) -> bytes:
         assert self._reader is not None
-        return await asyncio.wait_for(
-            self._reader.readexactly(n),
-            timeout=self.timeout,
-        )
+        return await asyncio.wait_for(self._reader.readexactly(n), timeout=self.timeout)
 
 class GetExHistoryInstrumentBarsRangeCmd(BaseCommand[list[ExInstrumentBar]]):
     """按日期范围获取历史K线数据。"""
 
     _seqid: int = 1
 
-    def __init__(self, market: int, code: str, start_date: int, end_date: int) -> None:
+    def __init__(self, market: int, code: str, start_date: int, end_date: int):
         self.market = market
         self.code = code.encode("utf-8")
         self.start_date = start_date
@@ -460,43 +409,17 @@ class GetExHistoryInstrumentBarsRangeCmd(BaseCommand[list[ExInstrumentBar]]):
             if pos + 32 > len(body):
                 break
             record_start = pos
-            (d1, d2, open_p, high, low, close_p, position, trade, settlement) = struct.unpack(
-                "<HHffffIIf",
-                body[pos : pos + 32],
-            )
+            (d1, d2, open_p, high, low, close_p, position, trade, settlement) = struct.unpack("<HHffffIIf", body[pos : pos + 32])
             pos += 32
             year, month, day = self._parse_date(d1)
             hour, minute = self._parse_time(d2)
-            results.append(
-                ExInstrumentBar(
-                    open=open_p,
-                    high=high,
-                    low=low,
-                    close=close_p,
-                    position=position,
-                    trade=trade,
-                    amount=settlement,
-                    year=year,
-                    month=month,
-                    day=day,
-                    hour=hour,
-                    minute=minute,
-                    _raw=body[record_start:pos],
-                )
-            )
+            results.append(ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade, amount=settlement, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
         return results
 
 class GetExInstrumentBarsCmd(BaseCommand[list[ExInstrumentBar]]):
     """获取K线数据（扩展行情版本，支持期货/港股等）。"""
 
-    def __init__(
-        self,
-        category: int,
-        market: int,
-        code: str,
-        start: int = 0,
-        count: int = 700,
-    ) -> None:
+    def __init__(self, category: int, market: int, code: str, start: int = 0, count: int = 700):
         self.category = category
         self.market = market
         self.code = code.encode("utf-8")
@@ -505,15 +428,7 @@ class GetExInstrumentBarsCmd(BaseCommand[list[ExInstrumentBar]]):
 
     def build_request(self) -> bytes:
         header = bytes.fromhex("01 01 08 6a 01 01 16 00 16 00 ff 23")
-        return header + struct.pack(
-            "<B9sHHIH",
-            self.market,
-            self.code,
-            self.category,
-            1,
-            self.start,
-            self.count,
-        )
+        return header + struct.pack("<B9sHHIH", self.market, self.code, self.category, 1, self.start, self.count)
 
     def parse_response(self, body: bytes) -> list[ExInstrumentBar]:
         pos = 18  # skip 18-byte header
@@ -527,29 +442,10 @@ class GetExInstrumentBarsCmd(BaseCommand[list[ExInstrumentBar]]):
             year, month, day, hour, minute, pos = get_datetime(self.category, body, pos)
             if pos + 28 > len(body):
                 break
-            (open_p, high, low, close_p, position, trade, _price) = struct.unpack(
-                "<ffffIIf",
-                body[pos : pos + 28],
-            )
+            (open_p, high, low, close_p, position, trade, _price) = struct.unpack("<ffffIIf", body[pos : pos + 28])
             (amount,) = struct.unpack("<f", body[pos + 16 : pos + 20])
             pos += 28
-            results.append(
-                ExInstrumentBar(
-                    open=open_p,
-                    high=high,
-                    low=low,
-                    close=close_p,
-                    position=position,
-                    trade=trade,
-                    amount=amount,
-                    year=year,
-                    month=month,
-                    day=day,
-                    hour=hour,
-                    minute=minute,
-                    _raw=body[record_start:pos],
-                )
-            )
+            results.append(ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
         return results
 
 class GetExInstrumentCountCmd(BaseCommand[int]):
@@ -568,7 +464,7 @@ class GetExInstrumentCountCmd(BaseCommand[int]):
 class GetExInstrumentInfoCmd(BaseCommand[list[ExInstrumentInfo]]):
     """获取扩展行情市场中的商品信息列表。"""
 
-    def __init__(self, start: int, count: int = 100) -> None:
+    def __init__(self, start: int, count: int = 100):
         self.start = start
         self.count = count
 
@@ -588,30 +484,18 @@ class GetExInstrumentInfoCmd(BaseCommand[list[ExInstrumentInfo]]):
             if pos + 64 > len(body):
                 break
             raw = body[pos : pos + 64]
-            (category, market, _unused, raw_code, raw_name, raw_desc) = struct.unpack(
-                "<BB3s9s17s9s",
-                raw[:40],
-            )
+            (category, market, _unused, raw_code, raw_name, raw_desc) = struct.unpack("<BB3s9s17s9s", raw[:40])
             pos += 64
             code = raw_code.decode("gbk", errors="replace").rstrip("\x00")
             name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
             desc = raw_desc.decode("gbk", errors="replace").rstrip("\x00")
-            results.append(
-                ExInstrumentInfo(
-                    category=category,
-                    market=market,
-                    code=code,
-                    name=name,
-                    desc=desc,
-                    _raw=raw,
-                )
-            )
+            results.append(ExInstrumentInfo(category=category, market=market, code=code, name=name, desc=desc, _raw=raw))
         return results
 
 class GetExInstrumentQuoteCmd(BaseCommand[ExInstrumentQuote]):
     """获取单个商品的五档实时行情。"""
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -627,93 +511,14 @@ class GetExInstrumentQuoteCmd(BaseCommand[ExInstrumentQuote]):
         pos += 10
         pos += 4  # skip 4 unknown bytes
         record_start = pos - 14
-        (
-            pre_close,
-            open_price,
-            high,
-            low,
-            price,
-            kaicang,
-            _unk1,
-            zongliang,
-            xianliang,
-            _unk2,
-            neipan,
-            waipan,
-            _unk3,
-            chicang,
-            b1,
-            b2,
-            b3,
-            b4,
-            b5,
-            bv1,
-            bv2,
-            bv3,
-            bv4,
-            bv5,
-            a1,
-            a2,
-            a3,
-            a4,
-            a5,
-            av1,
-            av2,
-            av3,
-            av4,
-            av5,
-        ) = struct.unpack(
-            "<fffffIIIIIIIIIfffffIIIIIfffffIIIII",
-            body[pos : pos + 136],
-        )
+        (pre_close, open_price, high, low, price, kaicang, _unk1, zongliang, xianliang, _unk2, neipan, waipan, _unk3, chicang, b1, b2, b3, b4, b5, bv1, bv2, bv3, bv4, bv5, a1, a2, a3, a4, a5, av1, av2, av3, av4, av5) = struct.unpack("<fffffIIIIIIIIIfffffIIIIIfffffIIIII", body[pos : pos + 136])
         code = raw_code.decode("utf-8", errors="replace").rstrip("\x00")
-        return ExInstrumentQuote(
-            market=market,
-            code=code,
-            pre_close=pre_close,
-            open=open_price,
-            high=high,
-            low=low,
-            price=price,
-            kaicang=kaicang,
-            zongliang=zongliang,
-            xianliang=xianliang,
-            neipan=neipan,
-            waipan=waipan,
-            chicang=chicang,
-            bid1=b1,
-            bid2=b2,
-            bid3=b3,
-            bid4=b4,
-            bid5=b5,
-            bid_vol1=bv1,
-            bid_vol2=bv2,
-            bid_vol3=bv3,
-            bid_vol4=bv4,
-            bid_vol5=bv5,
-            ask1=a1,
-            ask2=a2,
-            ask3=a3,
-            ask4=a4,
-            ask5=a5,
-            ask_vol1=av1,
-            ask_vol2=av2,
-            ask_vol3=av3,
-            ask_vol4=av4,
-            ask_vol5=av5,
-            _raw=body[record_start : pos + 136],
-        )
+        return ExInstrumentQuote(market=market, code=code, pre_close=pre_close, open=open_price, high=high, low=low, price=price, kaicang=kaicang, zongliang=zongliang, xianliang=xianliang, neipan=neipan, waipan=waipan, chicang=chicang, bid1=b1, bid2=b2, bid3=b3, bid4=b4, bid5=b5, bid_vol1=bv1, bid_vol2=bv2, bid_vol3=bv3, bid_vol4=bv4, bid_vol5=bv5, ask1=a1, ask2=a2, ask3=a3, ask4=a4, ask5=a5, ask_vol1=av1, ask_vol2=av2, ask_vol3=av3, ask_vol4=av4, ask_vol5=av5, _raw=body[record_start : pos + 136])
 
 class GetExInstrumentQuoteListCmd(BaseCommand[list[OrderedDict[str, object]]]):
     """按类别获取商品行情列表（期货/港股等）。"""
 
-    def __init__(
-        self,
-        market: int,
-        category: int,
-        start: int = 0,
-        count: int = 80,
-    ) -> None:
+    def __init__(self, market: int, category: int, start: int = 0, count: int = 80):
         self.market = market
         self.category = category
         self.start = start
@@ -721,14 +526,7 @@ class GetExInstrumentQuoteListCmd(BaseCommand[list[OrderedDict[str, object]]]):
 
     def build_request(self) -> bytes:
         header = bytes.fromhex("01 c1 06 0b 00 02 0b 00 0b 00 00 24")
-        return header + struct.pack(
-            "<BHHHH",
-            self.market,
-            0,
-            self.start,
-            self.count,
-            1,
-        )
+        return header + struct.pack("<BHHHH", self.market, 0, self.start, self.count, 1)
 
     def parse_response(self, body: bytes) -> list[OrderedDict[str, object]]:
         if len(body) < 2:
@@ -751,167 +549,23 @@ class GetExInstrumentQuoteListCmd(BaseCommand[list[OrderedDict[str, object]]]):
         return results
 
     @staticmethod
-    def _parse_futures(
-        market: int,
-        code: str,
-        body: bytes,
-        pos: int,
-        results: list[OrderedDict[str, object]],
-    ) -> int:
+    def _parse_futures(market: int, code: str, body: bytes, pos: int, results: list[OrderedDict[str, object]]) -> int:
         if pos + 140 > len(body):
             return pos + 290
-        (
-            bi_shu,
-            zuo_jie,
-            jin_kai,
-            zui_gao,
-            zui_di,
-            mai_chu,
-            kai_cang,
-            _unk1,
-            zong_liang,
-            xian_liang,
-            zong_jin_e,
-            nei_pan,
-            wai_pan,
-            _unk2,
-            chi_cang_liang,
-            mai_ru_jia,
-            _u1,
-            _u2,
-            _u3,
-            _u4,
-            mai_ru_liang,
-            _u5,
-            _u6,
-            _u7,
-            _u8,
-            mai_chu_jia,
-            _u9,
-            _u10,
-            _u11,
-            _u12,
-            mai_chu_liang,
-            _u13,
-            _u14,
-            _u15,
-        ) = struct.unpack("<IfffffIIIIfIIfIfIIIIIIIIIfIIIIIIIII", body[pos : pos + 140])
+        (bi_shu, zuo_jie, jin_kai, zui_gao, zui_di, mai_chu, kai_cang, _unk1, zong_liang, xian_liang, zong_jin_e, nei_pan, wai_pan, _unk2, chi_cang_liang, mai_ru_jia, _u1, _u2, _u3, _u4, mai_ru_liang, _u5, _u6, _u7, _u8, mai_chu_jia, _u9, _u10, _u11, _u12, mai_chu_liang, _u13, _u14, _u15) = struct.unpack("<IfffffIIIIfIIfIfIIIIIIIIIfIIIIIIIII", body[pos : pos + 140])
         pos += 290
-        results.append(
-            OrderedDict(
-                [
-                    ("market", market),
-                    ("code", code),
-                    ("BiShu", bi_shu),
-                    ("ZuoJie", zuo_jie),
-                    ("JinKai", jin_kai),
-                    ("ZuiGao", zui_gao),
-                    ("ZuiDi", zui_di),
-                    ("MaiChu", mai_chu),
-                    ("KaiCang", kai_cang),
-                    ("ZongLiang", zong_liang),
-                    ("XianLiang", xian_liang),
-                    ("ZongJinE", zong_jin_e),
-                    ("NeiPan", nei_pan),
-                    ("WaiPan", wai_pan),
-                    ("ChiCangLiang", chi_cang_liang),
-                    ("MaiRuJia", mai_ru_jia),
-                    ("MaiRuLiang", mai_ru_liang),
-                    ("MaiChuJia", mai_chu_jia),
-                    ("MaiChuLiang", mai_chu_liang),
-                ]
-            )
-        )
+        results.append(OrderedDict([
+                    ("market", market), ("code", code), ("BiShu", bi_shu), ("ZuoJie", zuo_jie), ("JinKai", jin_kai), ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("MaiChu", mai_chu), ("KaiCang", kai_cang), ("ZongLiang", zong_liang), ("XianLiang", xian_liang), ("ZongJinE", zong_jin_e), ("NeiPan", nei_pan), ("WaiPan", wai_pan), ("ChiCangLiang", chi_cang_liang), ("MaiRuJia", mai_ru_jia), ("MaiRuLiang", mai_ru_liang), ("MaiChuJia", mai_chu_jia), ("MaiChuLiang", mai_chu_liang), ]))
         return pos
 
     @staticmethod
-    def _parse_hk_stocks(
-        market: int,
-        code: str,
-        body: bytes,
-        pos: int,
-        results: list[OrderedDict[str, object]],
-    ) -> int:
+    def _parse_hk_stocks(market: int, code: str, body: bytes, pos: int, results: list[OrderedDict[str, object]]) -> int:
         if pos + 140 > len(body):
             return pos + 290
-        (
-            huo_yue_du,
-            zuo_shou,
-            jin_kai,
-            zui_gao,
-            zui_di,
-            xian_jia,
-            _unk1,
-            mai_ru_jia,
-            zong_liang,
-            xian_liang,
-            zong_jin_e,
-            _unk2,
-            _unk3,
-            nei,
-            wai,
-            mrj1,
-            mrj2,
-            mrj3,
-            mrj4,
-            mrj5,
-            mrl1,
-            mrl2,
-            mrl3,
-            mrl4,
-            mrl5,
-            mcj1,
-            mcj2,
-            mcj3,
-            mcj4,
-            mcj5,
-            mcl1,
-            mcl2,
-            mcl3,
-            mcl4,
-            mcl5,
-        ) = struct.unpack("<IfffffIfIIfIIIIfffffIIIIIfffffIIIII", body[pos : pos + 140])
+        (huo_yue_du, zuo_shou, jin_kai, zui_gao, zui_di, xian_jia, _unk1, mai_ru_jia, zong_liang, xian_liang, zong_jin_e, _unk2, _unk3, nei, wai, mrj1, mrj2, mrj3, mrj4, mrj5, mrl1, mrl2, mrl3, mrl4, mrl5, mcj1, mcj2, mcj3, mcj4, mcj5, mcl1, mcl2, mcl3, mcl4, mcl5) = struct.unpack("<IfffffIfIIfIIIIfffffIIIIIfffffIIIII", body[pos : pos + 140])
         pos += 290
-        results.append(
-            OrderedDict(
-                [
-                    ("market", market),
-                    ("code", code),
-                    ("HuoYueDu", huo_yue_du),
-                    ("ZuoShou", zuo_shou),
-                    ("JinKai", jin_kai),
-                    ("ZuiGao", zui_gao),
-                    ("ZuiDi", zui_di),
-                    ("XianJia", xian_jia),
-                    ("MaiRuJia", mai_ru_jia),
-                    ("ZongLiang", zong_liang),
-                    ("XianLiang", xian_liang),
-                    ("ZongJinE", zong_jin_e),
-                    ("Nei", nei),
-                    ("Wai", wai),
-                    ("MaiRuJia1", mrj1),
-                    ("MaiRuJia2", mrj2),
-                    ("MaiRuJia3", mrj3),
-                    ("MaiRuJia4", mrj4),
-                    ("MaiRuJia5", mrj5),
-                    ("MaiRuLiang1", mrl1),
-                    ("MaiRuLiang2", mrl2),
-                    ("MaiRuLiang3", mrl3),
-                    ("MaiRuLiang4", mrl4),
-                    ("MaiRuLiang5", mrl5),
-                    ("MaiChuJia1", mcj1),
-                    ("MaiChuJia2", mcj2),
-                    ("MaiChuJia3", mcj3),
-                    ("MaiChuJia4", mcj4),
-                    ("MaiChuJia5", mcj5),
-                    ("MaiChuLiang1", mcl1),
-                    ("MaiChuLiang2", mcl2),
-                    ("MaiChuLiang3", mcl3),
-                    ("MaiChuLiang4", mcl4),
-                    ("MaiChuLiang5", mcl5),
-                ]
-            )
-        )
+        results.append(OrderedDict([
+                    ("market", market), ("code", code), ("HuoYueDu", huo_yue_du), ("ZuoShou", zuo_shou), ("JinKai", jin_kai), ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("XianJia", xian_jia), ("MaiRuJia", mai_ru_jia), ("ZongLiang", zong_liang), ("XianLiang", xian_liang), ("ZongJinE", zong_jin_e), ("Nei", nei), ("Wai", wai), ("MaiRuJia1", mrj1), ("MaiRuJia2", mrj2), ("MaiRuJia3", mrj3), ("MaiRuJia4", mrj4), ("MaiRuJia5", mrj5), ("MaiRuLiang1", mrl1), ("MaiRuLiang2", mrl2), ("MaiRuLiang3", mrl3), ("MaiRuLiang4", mrl4), ("MaiRuLiang5", mrl5), ("MaiChuJia1", mcj1), ("MaiChuJia2", mcj2), ("MaiChuJia3", mcj3), ("MaiChuJia4", mcj4), ("MaiChuJia5", mcj5), ("MaiChuLiang1", mcl1), ("MaiChuLiang2", mcl2), ("MaiChuLiang3", mcl3), ("MaiChuLiang4", mcl4), ("MaiChuLiang5", mcl5), ]))
         return pos
 
 class GetExMarketsCmd(BaseCommand[list[ExMarketInfo]]):
@@ -936,21 +590,13 @@ class GetExMarketsCmd(BaseCommand[list[ExMarketInfo]]):
                 continue
             name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
             short_name = raw_short_name.decode("gbk", errors="replace").rstrip("\x00")
-            results.append(
-                ExMarketInfo(
-                    market=market,
-                    category=category,
-                    name=name,
-                    short_name=short_name,
-                    _raw=raw,
-                )
-            )
+            results.append(ExMarketInfo(market=market, category=category, name=name, short_name=short_name, _raw=raw))
         return results
 
 class GetExMinuteTimeDataCmd(BaseCommand[list[ExMinuteBar]]):
     """获取当日分时行情数据。"""
 
-    def __init__(self, market: int, code: str) -> None:
+    def __init__(self, market: int, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -973,31 +619,18 @@ class GetExMinuteTimeDataCmd(BaseCommand[list[ExMinuteBar]]):
             if pos + 18 > len(body):
                 break
             record_start = pos
-            (raw_time, price, avg_price, volume, amount) = struct.unpack(
-                "<HffII",
-                body[pos : pos + 18],
-            )
+            (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos : pos + 18])
             pos += 18
             hour = raw_time // 60
             minute = raw_time % 60
-            results.append(
-                ExMinuteBar(
-                    hour=hour,
-                    minute=minute,
-                    price=price,
-                    avg_price=avg_price,
-                    volume=volume,
-                    open_interest=amount,
-                    _raw=body[record_start:pos],
-                )
-            )
+            results.append(ExMinuteBar(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume, open_interest=amount, _raw=body[record_start:pos]))
         return results
 
 
 class GetExHistoryMinuteTimeDataCmd(BaseCommand[list[ExMinuteBar]]):
     """获取历史某日分时行情数据。"""
 
-    def __init__(self, market: int, code: str, date: int) -> None:
+    def __init__(self, market: int, code: str, date: int):
         self.market = market
         self.code = code.encode("utf-8")
         self.date = date
@@ -1017,7 +650,7 @@ class GetExHistoryMinuteTimeDataCmd(BaseCommand[list[ExMinuteBar]]):
 class GetExTransactionDataCmd(BaseCommand[list[ExTransactionRecord]]):
     """获取当日分笔成交数据。"""
 
-    def __init__(self, market: int, code: str, start: int = 0, count: int = 1800) -> None:
+    def __init__(self, market: int, code: str, start: int = 0, count: int = 1800):
         self.market = market
         self.code = code.encode("utf-8")
         self.start = start
@@ -1042,10 +675,7 @@ class GetExTransactionDataCmd(BaseCommand[list[ExTransactionRecord]]):
             if pos + 16 > len(body):
                 break
             record_start = pos
-            (raw_time, price, volume, zengcang, direction) = struct.unpack(
-                "<HIIiH",
-                body[pos : pos + 16],
-            )
+            (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos : pos + 16])
             pos += 16
             hour = raw_time // 60
             minute = raw_time % 60
@@ -1053,32 +683,14 @@ class GetExTransactionDataCmd(BaseCommand[list[ExTransactionRecord]]):
             if second > 59:
                 second = 0
             nature = direction // 10000
-            results.append(
-                ExTransactionRecord(
-                    hour=hour,
-                    minute=minute,
-                    second=second,
-                    price=price,
-                    volume=volume,
-                    zengcang=zengcang,
-                    nature=nature,
-                    _raw=body[record_start:pos],
-                )
-            )
+            results.append(ExTransactionRecord(hour=hour, minute=minute, second=second, price=price, volume=volume, zengcang=zengcang, nature=nature, _raw=body[record_start:pos]))
         return results
 
 
 class GetExHistoryTransactionDataCmd(BaseCommand[list[ExTransactionRecord]]):
     """获取历史某日分笔成交数据。"""
 
-    def __init__(
-        self,
-        market: int,
-        code: str,
-        date: int,
-        start: int = 0,
-        count: int = 1800,
-    ) -> None:
+    def __init__(self, market: int, code: str, date: int, start: int = 0, count: int = 1800):
         self.market = market
         self.code = code.encode("utf-8")
         self.date = date
@@ -1087,14 +699,7 @@ class GetExHistoryTransactionDataCmd(BaseCommand[list[ExTransactionRecord]]):
 
     def build_request(self) -> bytes:
         header = bytes.fromhex("01 01 30 00 02 01 16 00 16 00 06 24")
-        return header + struct.pack(
-            "<IB9siH",
-            self.date,
-            self.market,
-            self.code,
-            self.start,
-            self.count,
-        )
+        return header + struct.pack("<IB9siH", self.date, self.market, self.code, self.start, self.count)
 
     def parse_response(self, body: bytes) -> list[ExTransactionRecord]:
         if len(body) < 16:
@@ -1111,9 +716,7 @@ class MacExLoginCmd(BaseCommand[bool]):
 
     def build_request(self) -> bytes:
         # 80 字节 Login body，来自 opentdx 参考实现，已通过实际测试验证。
-        _LOGIN_BODY = bytes(
-            bytearray.fromhex(
-                "e5bb1c2fafe52594"
+        _LOGIN_BODY = bytes(bytearray.fromhex("e5bb1c2fafe52594"
                 "1f32c6e5d53dfb41"
                 "5b734cc9cdbf0ac9"
                 "2021bfdd1eb06d22"
@@ -1122,22 +725,15 @@ class MacExLoginCmd(BaseCommand[bool]):
                 "1f32c6e5d53dfb41"
                 "1f32c6e5d53dfb41"
                 "a9325ac935dc0837"
-                "335a16e4ce17c1bb"
-            )
-        )
+                "335a16e4ce17c1bb"))
 
         inner = struct.pack("<H", 0x2454) + _LOGIN_BODY
 
         # EX 协议帧头格式: head_flag(1B) + customize(4B) + version(1B) + zipsize(2B) + unzipsize(2B)
         _EX_HEADER_FMT = "<BIBHH"
-        header = struct.pack(
-            _EX_HEADER_FMT,
-            0x01,
-            0,  # customize
+        header = struct.pack(_EX_HEADER_FMT, 0x01, 0,  # customize
             1,  # version
-            len(inner),
-            len(inner),
-        )
+            len(inner), len(inner))
         return header + inner
 
     def parse_response(self, body: bytes) -> bool:
@@ -1163,13 +759,7 @@ class ExTdxClient:
             quote = c.get_instrument_quote(47, "IFL0")
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 15.0,
-        auto_reconnect: bool = True,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = _DEFAULT_EX_PORT, timeout: float = 15.0, auto_reconnect: bool = True):
         self._host = host if host is not None else get_best_ex_host()
         self._port = port
         self._timeout = timeout
@@ -1177,14 +767,7 @@ class ExTdxClient:
         self._conn = ExTdxConnection(self._host, port, timeout)
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 15.0,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-    ) -> "ExTdxClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = _DEFAULT_EX_PORT, timeout: float = 15.0, ping_timeout: float = 5.0, auto_reconnect: bool = True) -> "ExTdxClient":
         """测量所有扩展行情服务器延迟，选最低延迟建立连接。自动保存最佳主机。"""
         if hosts is None:
             hosts = get_ex_hosts()
@@ -1194,33 +777,24 @@ class ExTdxClient:
         return cls(best, port, timeout, auto_reconnect)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = _DEFAULT_EX_PORT, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts, port, timeout)
 
     # ------------------------------------------------------------------ #
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    def connect(self) -> None:
+    def connect(self):
         self._conn.connect()
 
-    def close(self) -> None:
+    def close(self):
         self._conn.close()
 
     def __enter__(self) -> "ExTdxClient":
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
     def _execute(self, cmd: "BaseCommand[_T]") -> _T:
@@ -1258,13 +832,7 @@ class ExTdxClient:
         """获取单个商品五档实时行情。"""
         return self._execute(GetExInstrumentQuoteCmd(market, code))
 
-    def get_instrument_quote_list(
-        self,
-        market: int,
-        category: int,
-        start: int = 0,
-        count: int = 80,
-    ) -> list[OrderedDict[str, object]]:
+    def get_instrument_quote_list(self, market: int, category: int, start: int = 0, count: int = 80) -> list[OrderedDict[str, object]]:
         """按类别获取商品行情列表。"""
         return self._execute(GetExInstrumentQuoteListCmd(market, category, start, count))
 
@@ -1272,24 +840,11 @@ class ExTdxClient:
     # K线
     # ------------------------------------------------------------------ #
 
-    def get_instrument_bars(
-        self,
-        category: int,
-        market: int,
-        code: str,
-        start: int = 0,
-        count: int = 700,
-    ) -> list[ExInstrumentBar]:
+    def get_instrument_bars(self, category: int, market: int, code: str, start: int = 0, count: int = 700) -> list[ExInstrumentBar]:
         """获取K线数据。"""
         return self._execute(GetExInstrumentBarsCmd(category, market, code, start, count))
 
-    def get_history_instrument_bars_range(
-        self,
-        market: int,
-        code: str,
-        start_date: int,
-        end_date: int,
-    ) -> list[ExInstrumentBar]:
+    def get_history_instrument_bars_range(self, market: int, code: str, start_date: int, end_date: int) -> list[ExInstrumentBar]:
         """按日期范围获取历史K线。"""
         return self._execute(GetExHistoryInstrumentBarsRangeCmd(market, code, start_date, end_date))
 
@@ -1301,12 +856,7 @@ class ExTdxClient:
         """获取当日分时行情数据。"""
         return self._execute(GetExMinuteTimeDataCmd(market, code))
 
-    def get_history_minute_time_data(
-        self,
-        market: int,
-        code: str,
-        date: int,
-    ) -> list[ExMinuteBar]:
+    def get_history_minute_time_data(self, market: int, code: str, date: int) -> list[ExMinuteBar]:
         """获取历史某日分时行情数据（date: YYYYMMDD）。"""
         return self._execute(GetExHistoryMinuteTimeDataCmd(market, code, date))
 
@@ -1314,24 +864,11 @@ class ExTdxClient:
     # 成交
     # ------------------------------------------------------------------ #
 
-    def get_transaction_data(
-        self,
-        market: int,
-        code: str,
-        start: int = 0,
-        count: int = 1800,
-    ) -> list[ExTransactionRecord]:
+    def get_transaction_data(self, market: int, code: str, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         """获取当日分笔成交数据。"""
         return self._execute(GetExTransactionDataCmd(market, code, start, count))
 
-    def get_history_transaction_data(
-        self,
-        market: int,
-        code: str,
-        date: int,
-        start: int = 0,
-        count: int = 1800,
-    ) -> list[ExTransactionRecord]:
+    def get_history_transaction_data(self, market: int, code: str, date: int, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         """获取历史某日分笔成交数据（date: YYYYMMDD）。"""
         return self._execute(GetExHistoryTransactionDataCmd(market, code, date, start, count))
 
@@ -1350,14 +887,7 @@ class AsyncExTdxClient:
             markets = await c.get_markets()
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 15.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = _DEFAULT_EX_PORT, timeout: float = 15.0, auto_reconnect: bool = True, heartbeat_interval: float = 60.0):
         self._host = host if host is not None else get_best_ex_host()
         self._port = port
         self._timeout = timeout
@@ -1368,15 +898,7 @@ class AsyncExTdxClient:
         self._heartbeat_task: asyncio.Task[None] = None
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 15.0,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> "AsyncExTdxClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = _DEFAULT_EX_PORT, timeout: float = 15.0, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 60.0) -> "AsyncExTdxClient":
         if hosts is None:
             hosts = get_ex_hosts()
         ranked = ping_ex_all(hosts, port, ping_timeout)
@@ -1385,22 +907,18 @@ class AsyncExTdxClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = _DEFAULT_EX_PORT,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = _DEFAULT_EX_PORT, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts, port, timeout)
 
     # ------------------------------------------------------------------ #
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    async def connect(self) -> None:
+    async def connect(self):
         await self._conn.connect()
         self._start_heartbeat()
 
-    async def close(self) -> None:
+    async def close(self):
         await self._stop_heartbeat()
         await self._conn.close()
 
@@ -1408,22 +926,17 @@ class AsyncExTdxClient:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
-    def _start_heartbeat(self) -> None:
+    def _start_heartbeat(self):
         if self._heartbeat_interval <= 0:
             return
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-    async def _stop_heartbeat(self) -> None:
+    async def _stop_heartbeat(self):
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             try:
@@ -1432,7 +945,7 @@ class AsyncExTdxClient:
                 pass
             self._heartbeat_task = None
 
-    async def _heartbeat_loop(self) -> None:
+    async def _heartbeat_loop(self):
         while True:
             try:
                 await asyncio.sleep(self._heartbeat_interval)
@@ -1464,57 +977,28 @@ class AsyncExTdxClient:
     async def get_instrument_count(self) -> int:
         return await self._execute(GetExInstrumentCountCmd())
 
-    async def get_instrument_info(
-        self,
-        start: int,
-        count: int = 100,
-    ) -> list[ExInstrumentInfo]:
+    async def get_instrument_info(self, start: int, count: int = 100) -> list[ExInstrumentInfo]:
         return await self._execute(GetExInstrumentInfoCmd(start, count))
 
     # ------------------------------------------------------------------ #
     # 行情
     # ------------------------------------------------------------------ #
 
-    async def get_instrument_quote(
-        self,
-        market: int,
-        code: str,
-    ) -> ExInstrumentQuote:
+    async def get_instrument_quote(self, market: int, code: str) -> ExInstrumentQuote:
         return await self._execute(GetExInstrumentQuoteCmd(market, code))
 
-    async def get_instrument_quote_list(
-        self,
-        market: int,
-        category: int,
-        start: int = 0,
-        count: int = 80,
-    ) -> list[OrderedDict[str, object]]:
+    async def get_instrument_quote_list(self, market: int, category: int, start: int = 0, count: int = 80) -> list[OrderedDict[str, object]]:
         return await self._execute(GetExInstrumentQuoteListCmd(market, category, start, count))
 
     # ------------------------------------------------------------------ #
     # K线
     # ------------------------------------------------------------------ #
 
-    async def get_instrument_bars(
-        self,
-        category: int,
-        market: int,
-        code: str,
-        start: int = 0,
-        count: int = 700,
-    ) -> list[ExInstrumentBar]:
+    async def get_instrument_bars(self, category: int, market: int, code: str, start: int = 0, count: int = 700) -> list[ExInstrumentBar]:
         return await self._execute(GetExInstrumentBarsCmd(category, market, code, start, count))
 
-    async def get_history_instrument_bars_range(
-        self,
-        market: int,
-        code: str,
-        start_date: int,
-        end_date: int,
-    ) -> list[ExInstrumentBar]:
-        return await self._execute(
-            GetExHistoryInstrumentBarsRangeCmd(market, code, start_date, end_date)
-        )
+    async def get_history_instrument_bars_range(self, market: int, code: str, start_date: int, end_date: int) -> list[ExInstrumentBar]:
+        return await self._execute(GetExHistoryInstrumentBarsRangeCmd(market, code, start_date, end_date))
 
     # ------------------------------------------------------------------ #
     # 分时
@@ -1523,35 +1007,17 @@ class AsyncExTdxClient:
     async def get_minute_time_data(self, market: int, code: str) -> list[ExMinuteBar]:
         return await self._execute(GetExMinuteTimeDataCmd(market, code))
 
-    async def get_history_minute_time_data(
-        self,
-        market: int,
-        code: str,
-        date: int,
-    ) -> list[ExMinuteBar]:
+    async def get_history_minute_time_data(self, market: int, code: str, date: int) -> list[ExMinuteBar]:
         return await self._execute(GetExHistoryMinuteTimeDataCmd(market, code, date))
 
     # ------------------------------------------------------------------ #
     # 成交
     # ------------------------------------------------------------------ #
 
-    async def get_transaction_data(
-        self,
-        market: int,
-        code: str,
-        start: int = 0,
-        count: int = 1800,
-    ) -> list[ExTransactionRecord]:
+    async def get_transaction_data(self, market: int, code: str, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         return await self._execute(GetExTransactionDataCmd(market, code, start, count))
 
-    async def get_history_transaction_data(
-        self,
-        market: int,
-        code: str,
-        date: int,
-        start: int = 0,
-        count: int = 1800,
-    ) -> list[ExTransactionRecord]:
+    async def get_history_transaction_data(self, market: int, code: str, date: int, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         return await self._execute(GetExHistoryTransactionDataCmd(market, code, date, start, count))
 
 
@@ -1580,13 +1046,7 @@ class MacExClient:
             df = c.goods_quotes([(ExMarket.HK_MAIN_BOARD, "00700")])
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 15.0,
-        auto_reconnect: bool = True,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = _DEFAULT_PORT, timeout: float = 15.0, auto_reconnect: bool = True):
         self._host = host if host is not None else get_best_mac_ex_host()
         self._port = port
         self._timeout = timeout
@@ -1594,14 +1054,7 @@ class MacExClient:
         self._conn = ExTdxConnection(self._host, port, timeout, mac_ex_mode=True)
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 15.0,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-    ) -> "MacExClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = _DEFAULT_PORT, timeout: float = 15.0, ping_timeout: float = 5.0, auto_reconnect: bool = True) -> "MacExClient":
         """测量所有 MAC 扩展行情服务器延迟，选最低延迟建立连接。"""
         candidates = hosts or get_mac_ex_hosts()
         ranked = ping_ex_all(candidates, port, ping_timeout)
@@ -1610,28 +1063,24 @@ class MacExClient:
         return cls(best, port, timeout, auto_reconnect)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = _DEFAULT_PORT, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts or get_mac_ex_hosts(), port, timeout)
 
     # ------------------------------------------------------------------ #
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    def connect(self) -> None:
+    def connect(self):
         self._conn.connect()
         self._login()
 
-    def close(self) -> None:
+    def close(self):
         self._conn.close()
 
-    def disconnect(self) -> None:
+    def disconnect(self):
         self.close()
 
-    def ensure_connected(self) -> None:
+    def ensure_connected(self):
         """验证连接存活，断线则自动重建。"""
         try:
             self._execute(GetExInstrumentCountCmd())
@@ -1645,15 +1094,10 @@ class MacExClient:
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
-    def _login(self) -> None:
+    def _login(self):
         """执行 MAC EX 登录命令。"""
         self._conn.execute(MacExLoginCmd())
 
@@ -1763,11 +1207,7 @@ class MacExClient:
     # 行情
     # ------------------------------------------------------------------ #
 
-    def goods_quotes(
-        self,
-        stocks: list[tuple[int, str]],
-        fields: Any = None,
-    ) -> pd.DataFrame:
+    def goods_quotes(self, stocks: list[tuple[int, str]], fields: Any = None) -> pd.DataFrame:
         """批量获取扩展市场自定义字段报价。
 
         Parameters
@@ -1781,14 +1221,7 @@ class MacExClient:
         result: list[MacQuoteField] = self._execute(cmd)
         return _quotes_to_df(result)
 
-    def goods_quotes_list(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 100,
-        sort_type: SortType = SortType.CODE,
-        sort_order: SortOrder = SortOrder.NONE,
-    ) -> pd.DataFrame:
+    def goods_quotes_list(self, market: int, start: int = 0, count: int = 100, sort_type: SortType = SortType.CODE, sort_order: SortOrder = SortOrder.NONE) -> pd.DataFrame:
         """获取扩展市场排序报价列表（通过 GoodsList + Quotes 组合）。
 
         先获取商品列表，再批量查询报价。
@@ -1817,15 +1250,7 @@ class MacExClient:
         result: list[MacQuoteField] = self._execute(cmd)
         return _quotes_to_df(result)
 
-    def goods_kline(
-        self,
-        market: int,
-        code: str,
-        period: Period = Period.DAILY,
-        start: int = 0,
-        count: int = 800,
-        adjust: Adjust = Adjust.NONE,
-    ) -> pd.DataFrame:
+    def goods_kline(self, market: int, code: str, period: Period = Period.DAILY, start: int = 0, count: int = 800, adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
         """获取扩展市场 K 线数据（支持复权）。
 
         Parameters
@@ -1843,14 +1268,7 @@ class MacExClient:
         adjust : Adjust
             复权方式（NONE/QFQ/HFQ）。
         """
-        cmd = SymbolBarCmd(
-            market=market,
-            code=code,
-            period=period,
-            start=start,
-            count=count,
-            fq=adjust,
-        )
+        cmd = SymbolBarCmd(market=market, code=code, period=period, start=start, count=count, fq=adjust)
         result = self._execute(cmd)
         return _to_df(result)
 
@@ -1858,12 +1276,7 @@ class MacExClient:
     # 分时
     # ------------------------------------------------------------------ #
 
-    def goods_tick_chart(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-    ) -> pd.DataFrame:
+    def goods_tick_chart(self, market: int, code: str, query_date: date = None) -> pd.DataFrame:
         """获取单日分时图。
 
         Parameters
@@ -1879,11 +1292,7 @@ class MacExClient:
         result = self._execute(cmd)
         return _to_df(result)
 
-    def goods_chart_sampling(
-        self,
-        market: int,
-        code: str,
-    ) -> pd.DataFrame:
+    def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
         """获取分时缩略采样价格点（约 240 个点）。
 
         Parameters
@@ -1903,14 +1312,7 @@ class MacExClient:
     # 成交
     # ------------------------------------------------------------------ #
 
-    def goods_transaction(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-        start: int = 0,
-        count: int = 2000,
-    ) -> pd.DataFrame:
+    def goods_transaction(self, market: int, code: str, query_date: date = None, start: int = 0, count: int = 2000) -> pd.DataFrame:
         """获取逐笔成交数据。
 
         Parameters
@@ -1926,13 +1328,7 @@ class MacExClient:
         count : int
             返回条数。
         """
-        cmd = SymbolTransactionCmd(
-            market=market,
-            code=code,
-            query_date=query_date,
-            start=start,
-            count=count,
-        )
+        cmd = SymbolTransactionCmd(market=market, code=code, query_date=query_date, start=start, count=count)
         result = self._execute(cmd)
         return _to_df(result)
 
@@ -1951,14 +1347,7 @@ class AsyncMacExClient:
             df = await c.goods_kline(ExMarket.CFFEX_FUTURES, "IFL0", Period.DAILY)
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 15.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = _DEFAULT_PORT, timeout: float = 15.0, auto_reconnect: bool = True, heartbeat_interval: float = 60.0):
         self._host = host if host is not None else get_best_mac_ex_host()
         self._port = port
         self._timeout = timeout
@@ -1969,15 +1358,7 @@ class AsyncMacExClient:
         self._heartbeat_task: asyncio.Task[None] = None
 
     @classmethod
-    def from_best_host(
-        cls,
-        hosts: list[str] = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 15.0,
-        ping_timeout: float = 5.0,
-        auto_reconnect: bool = True,
-        heartbeat_interval: float = 60.0,
-    ) -> "AsyncMacExClient":
+    def from_best_host(cls, hosts: list[str] = None, port: int = _DEFAULT_PORT, timeout: float = 15.0, ping_timeout: float = 5.0, auto_reconnect: bool = True, heartbeat_interval: float = 60.0) -> "AsyncMacExClient":
         candidates = hosts or get_mac_ex_hosts()
         ranked = ping_ex_all(candidates, port, ping_timeout)
         best = ranked[0][0] if ranked else candidates[0]
@@ -1985,23 +1366,19 @@ class AsyncMacExClient:
         return cls(best, port, timeout, auto_reconnect, heartbeat_interval)
 
     @staticmethod
-    def ping_all(
-        hosts: list[str] = None,
-        port: int = _DEFAULT_PORT,
-        timeout: float = 5.0,
-    ) -> list[tuple[str, float]]:
+    def ping_all(hosts: list[str] = None, port: int = _DEFAULT_PORT, timeout: float = 5.0) -> list[tuple[str, float]]:
         return ping_ex_all(hosts or get_mac_ex_hosts(), port, timeout)
 
     # ------------------------------------------------------------------ #
     # 连接管理
     # ------------------------------------------------------------------ #
 
-    async def connect(self) -> None:
+    async def connect(self):
         await self._conn.connect()
         await self._login()
         self._start_heartbeat()
 
-    async def close(self) -> None:
+    async def close(self):
         await self._stop_heartbeat()
         await self._conn.close()
 
@@ -2009,22 +1386,17 @@ class AsyncMacExClient:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
-    def _start_heartbeat(self) -> None:
+    def _start_heartbeat(self):
         if self._heartbeat_interval <= 0:
             return
         if self._heartbeat_task is not None:
             self._heartbeat_task.cancel()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
-    async def _stop_heartbeat(self) -> None:
+    async def _stop_heartbeat(self):
         if self._heartbeat_task:
             self._heartbeat_task.cancel()
             try:
@@ -2033,7 +1405,7 @@ class AsyncMacExClient:
                 pass
             self._heartbeat_task = None
 
-    async def _heartbeat_loop(self) -> None:
+    async def _heartbeat_loop(self):
         while True:
             try:
                 await asyncio.sleep(self._heartbeat_interval)
@@ -2043,7 +1415,7 @@ class AsyncMacExClient:
             except Exception:
                 pass
 
-    async def _login(self) -> None:
+    async def _login(self):
         """执行 MAC EX 登录命令。"""
         await self._conn.execute(MacExLoginCmd())
 
@@ -2055,9 +1427,7 @@ class AsyncMacExClient:
                 if not self._auto_reconnect:
                     raise
                 await self._conn.close()
-                self._conn = AsyncExTdxConnection(
-                    self._host, self._port, self._timeout, mac_ex_mode=True
-                )
+                self._conn = AsyncExTdxConnection(self._host, self._port, self._timeout, mac_ex_mode=True)
                 await self._conn.connect()
                 await self._login()
                 return await self._conn.execute(cmd)
@@ -2142,23 +1512,12 @@ class AsyncMacExClient:
     # 行情
     # ------------------------------------------------------------------ #
 
-    async def goods_quotes(
-        self,
-        stocks: list[tuple[int, str]],
-        fields: Any = None,
-    ) -> pd.DataFrame:
+    async def goods_quotes(self, stocks: list[tuple[int, str]], fields: Any = None) -> pd.DataFrame:
         cmd = SymbolQuotesCmd(stocks, fields)
         result: list[MacQuoteField] = await self._execute(cmd)
         return _quotes_to_df(result)
 
-    async def goods_quotes_list(
-        self,
-        market: int,
-        start: int = 0,
-        count: int = 100,
-        sort_type: SortType = SortType.CODE,
-        sort_order: SortOrder = SortOrder.NONE,
-    ) -> pd.DataFrame:
+    async def goods_quotes_list(self, market: int, start: int = 0, count: int = 100, sort_type: SortType = SortType.CODE, sort_order: SortOrder = SortOrder.NONE) -> pd.DataFrame:
         page_size = min(count, 80)
         items_df = await self.goods_list(market, start=start, count=page_size)
         if items_df.empty:
@@ -2172,23 +1531,8 @@ class AsyncMacExClient:
     # K 线
     # ------------------------------------------------------------------ #
 
-    async def goods_kline(
-        self,
-        market: int,
-        code: str,
-        period: Period = Period.DAILY,
-        start: int = 0,
-        count: int = 800,
-        adjust: Adjust = Adjust.NONE,
-    ) -> pd.DataFrame:
-        cmd = SymbolBarCmd(
-            market=market,
-            code=code,
-            period=period,
-            start=start,
-            count=count,
-            fq=adjust,
-        )
+    async def goods_kline(self, market: int, code: str, period: Period = Period.DAILY, start: int = 0, count: int = 800, adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
+        cmd = SymbolBarCmd(market=market, code=code, period=period, start=start, count=count, fq=adjust)
         result = await self._execute(cmd)
         return _to_df(result)
 
@@ -2196,21 +1540,12 @@ class AsyncMacExClient:
     # 分时
     # ------------------------------------------------------------------ #
 
-    async def goods_tick_chart(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-    ) -> pd.DataFrame:
+    async def goods_tick_chart(self, market: int, code: str, query_date: date = None) -> pd.DataFrame:
         cmd = SymbolTickChartCmd(market=market, code=code, query_date=query_date)
         result = await self._execute(cmd)
         return _to_df(result)
 
-    async def goods_chart_sampling(
-        self,
-        market: int,
-        code: str,
-    ) -> pd.DataFrame:
+    async def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
         cmd = ChartSamplingCmd(market=market, code=code)
         prices: list[float] = await self._execute(cmd)
         if not prices:
@@ -2221,20 +1556,7 @@ class AsyncMacExClient:
     # 成交
     # ------------------------------------------------------------------ #
 
-    async def goods_transaction(
-        self,
-        market: int,
-        code: str,
-        query_date: date = None,
-        start: int = 0,
-        count: int = 2000,
-    ) -> pd.DataFrame:
-        cmd = SymbolTransactionCmd(
-            market=market,
-            code=code,
-            query_date=query_date,
-            start=start,
-            count=count,
-        )
+    async def goods_transaction(self, market: int, code: str, query_date: date = None, start: int = 0, count: int = 2000) -> pd.DataFrame:
+        cmd = SymbolTransactionCmd(market=market, code=code, query_date=query_date, start=start, count=count)
         result = await self._execute(cmd)
         return _to_df(result)

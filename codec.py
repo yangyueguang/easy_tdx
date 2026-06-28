@@ -15,10 +15,10 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from dataclasses import asdict, is_dataclass
 import pandas as pd
-"""二进制解析辅助函数。"""
-import struct
 from typing import Any
-from .commands import TdxDecodeError
+# from commands import TdxDecodeError
+class TdxDecodeError(Exception):
+    """响应报文解析失败"""
 class Market(IntEnum):
     SZ = 0  # 深圳
     SH = 1  # 上海
@@ -105,21 +105,7 @@ class XdxrRecord:
 
 
 XDXR_CATEGORY_NAMES: dict[int, str] = {
-    1: "除权除息",
-    2: "送配股上市",
-    3: "非流通股上市",
-    4: "未知股本变动",
-    5: "股本变化",
-    6: "增发新股",
-    7: "股份回购",
-    8: "增发新股上市",
-    9: "转配股上市",
-    10: "可转债上市",
-    11: "扩缩股",
-    12: "非流通股缩股",
-    13: "送认购权证",
-    14: "送认沽权证",
-}
+    1: "除权除息", 2: "送配股上市", 3: "非流通股上市", 4: "未知股本变动", 5: "股本变化", 6: "增发新股", 7: "股份回购", 8: "增发新股上市", 9: "转配股上市", 10: "可转债上市", 11: "扩缩股", 12: "非流通股缩股", 13: "送认购权证", 14: "送认沽权证", }
 
 
 @dataclass
@@ -357,9 +343,7 @@ class FundFlow:
     @property
     def total_net_inflow(self) -> float:
         """全单净流入。"""
-        return (self.super_in + self.large_in + self.medium_in + self.small_in) - (
-            self.super_out + self.large_out + self.medium_out + self.small_out
-        )
+        return (self.super_in + self.large_in + self.medium_in + self.small_in) - (self.super_out + self.large_out + self.medium_out + self.small_out)
 
 
 @dataclass
@@ -475,9 +459,7 @@ def _clean_dict(item: Any) -> dict[str, Any]:
 
 def _merge_datetime_fields(d: dict[str, Any]) -> dict[str, Any]:
     """将仅含 year/month/day（无 hour/minute）的模型合并为 date 列。"""
-    if all(k in d for k in ("year", "month", "day")) and not all(
-        k in d for k in ("hour", "minute")
-    ):
+    if all(k in d for k in ("year", "month", "day")) and not all(k in d for k in ("hour", "minute")):
         dt = pd.Timestamp(year=d["year"], month=d["month"], day=d["day"])
         result: dict[str, Any] = {"date": dt}
         result.update({k: v for k, v in d.items() if k not in {"year", "month", "day"}})
@@ -494,23 +476,19 @@ def _merge_bar_datetime(df: pd.DataFrame, daily_plus: bool) -> pd.DataFrame:
     """
     if df.empty or "year" not in df.columns:
         return df
-    date_str = (
-        df["year"].astype(str)
+    date_str = (df["year"].astype(str)
         + "-"
         + df["month"].astype(str).str.zfill(2)
         + "-"
-        + df["day"].astype(str).str.zfill(2)
-    )
+        + df["day"].astype(str).str.zfill(2))
     if daily_plus:
         df.insert(0, "date", pd.to_datetime(date_str))
     else:
-        full_str = (
-            date_str
+        full_str = (date_str
             + " "
             + df["hour"].astype(str).str.zfill(2)
             + ":"
-            + df["minute"].astype(str).str.zfill(2)
-        )
+            + df["minute"].astype(str).str.zfill(2))
         df.insert(0, "datetime", pd.to_datetime(full_str))
     df.drop(columns=["year", "month", "day", "hour", "minute"], inplace=True)
     return df
@@ -557,29 +535,17 @@ _MAC_VERSION = 1
 
 
 
-def require_bytes(
-    data: bytes,
-    pos: int,
-    size: int,
-    context: str,
-) -> None:
+def require_bytes(data: bytes, pos: int, size: int, context: str):
     """确保从 pos 起至少还能读取 size 字节。"""
     if pos < 0:
         raise TdxDecodeError(f"{context}: 非法偏移 {pos}")
     end = pos + size
     if end > len(data):
         remaining = max(len(data) - pos, 0)
-        raise TdxDecodeError(
-            f"{context}: 数据不足，需要 {size} 字节，偏移 {pos}，实际剩余 {remaining} 字节"
-        )
+        raise TdxDecodeError(f"{context}: 数据不足，需要 {size} 字节，偏移 {pos}，实际剩余 {remaining} 字节")
 
 
-def unpack_from(
-    fmt: str,
-    data: bytes,
-    pos: int,
-    context: str,
-) -> tuple[Any, ...]:
+def unpack_from(fmt: str, data: bytes, pos: int, context: str) -> tuple[Any, ...]:
     """带边界检查的 struct.unpack_from。"""
     require_bytes(data, pos, struct.calcsize(fmt), context)
     try:
@@ -588,12 +554,7 @@ def unpack_from(
         raise TdxDecodeError(f"{context}: 解析失败: {e}") from e
 
 
-def slice_bytes(
-    data: bytes,
-    pos: int,
-    size: int,
-    context: str,
-) -> bytes:
+def slice_bytes(data: bytes, pos: int, size: int, context: str) -> bytes:
     """带边界检查的切片读取。"""
     require_bytes(data, pos, size, context)
     return bytes(data[pos : pos + size])
@@ -617,14 +578,7 @@ def build_mac_request(msg_id: int, body: bytes, *, head_flag: int = _MAC_HEAD_FL
         完整的请求帧（10 字节头 + 2 字节 msg_id + body）。
     """
     inner = struct.pack("<H", msg_id) + body
-    header = struct.pack(
-        _MAC_HEADER_FMT,
-        head_flag,
-        _MAC_CUSTOMIZE,
-        _MAC_VERSION,
-        len(inner),
-        len(inner),
-    )
+    header = struct.pack(_MAC_HEADER_FMT, head_flag, _MAC_CUSTOMIZE, _MAC_VERSION, len(inner), len(inner))
     return header + inner
 """通达信行业配置文件 (tdxhy.cfg) 解析器。"""
 
@@ -888,111 +842,15 @@ class PresetField(Enum):
 
     NONE = ()
     OHLC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE)
-    BASIC = (
-        FieldBit.OPEN,
-        FieldBit.HIGH,
-        FieldBit.LOW,
-        FieldBit.CLOSE,
-        FieldBit.PRE_CLOSE,
-        FieldBit.VOL,
-    )
-    QUOTE = (
-        FieldBit.BID_PRICE,
-        FieldBit.ASK_PRICE,
-        FieldBit.BID_VOLUME,
-        FieldBit.ASK_VOLUME,
-        FieldBit.LAST_VOLUME,
-    )
+    BASIC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.PRE_CLOSE, FieldBit.VOL)
+    QUOTE = (FieldBit.BID_PRICE, FieldBit.ASK_PRICE, FieldBit.BID_VOLUME, FieldBit.ASK_VOLUME, FieldBit.LAST_VOLUME)
     VOLUME = (FieldBit.VOL, FieldBit.AMOUNT, FieldBit.TURNOVER, FieldBit.VOL_RATIO)
-    FUNDAMENTAL = (
-        FieldBit.TOTAL_SHARES,
-        FieldBit.FLOAT_SHARES,
-        FieldBit.EPS,
-        FieldBit.NET_ASSETS,
-    )
-    ENHANCED = (
-        FieldBit.OPEN,
-        FieldBit.HIGH,
-        FieldBit.LOW,
-        FieldBit.CLOSE,
-        FieldBit.VOL,
-        FieldBit.FLOAT_SHARES,
-        FieldBit.ACTIVITY,
-    )
-    AH_CODE_FIELDS = (
-        FieldBit.OPEN,
-        FieldBit.HIGH,
-        FieldBit.LOW,
-        FieldBit.CLOSE,
-        FieldBit.VOL,
-        FieldBit.AH_CODE,
-        FieldBit.LOT_SIZE,
-        FieldBit.INDUSTRY,
-    )
-    BOARD_STATS = (
-        FieldBit.LIMIT_UP_COUNT,
-        FieldBit.LIMIT_DOWN_COUNT,
-        FieldBit.UP_COUNT,
-        FieldBit.DOWN_COUNT,
-    )
-    HANDICAP = (
-        FieldBit.BID_PRICE,
-        FieldBit.BID2_PRICE,
-        FieldBit.BID3_PRICE,
-        FieldBit.BID4_PRICE,
-        FieldBit.BID5_PRICE,
-        FieldBit.ASK_PRICE,
-        FieldBit.ASK2_PRICE,
-        FieldBit.ASK3_PRICE,
-        FieldBit.ASK4_PRICE,
-        FieldBit.ASK5_PRICE,
-        FieldBit.BID_VOLUME,
-        FieldBit.BID2_VOLUME,
-        FieldBit.BID3_VOLUME,
-        FieldBit.BID4_VOLUME,
-        FieldBit.BID5_VOLUME,
-        FieldBit.ASK_VOLUME,
-        FieldBit.ASK2_VOLUME,
-        FieldBit.ASK3_VOLUME,
-        FieldBit.ASK4_VOLUME,
-        FieldBit.ASK5_VOLUME,
-    )
-    COMMON = (
-        FieldBit.PRE_CLOSE,
-        FieldBit.OPEN,
-        FieldBit.HIGH,
-        FieldBit.LOW,
-        FieldBit.CLOSE,
-        FieldBit.VOL,
-        FieldBit.VOL_RATIO,
-        FieldBit.AMOUNT,
-        FieldBit.TOTAL_SHARES,
-        FieldBit.FLOAT_SHARES,
-        FieldBit.EPS,
-        FieldBit.NET_ASSETS,
-        FieldBit.SECURITY_TYPE_PRICE,
-        FieldBit.TOTAL_MARKET_CAP_AB,
-        FieldBit.PE_DYNAMIC,
-        FieldBit.LOT_SIZE_INFO,
-        FieldBit.DIVIDEND_YIELD,
-        FieldBit.LAST_VOLUME,
-        FieldBit.TURNOVER,
-        FieldBit.STOCK_TAG_FLAGS,
-        FieldBit.DECIMAL_POINT,
-        FieldBit.BUY_PRICE_LIMIT,
-        FieldBit.SELL_PRICE_LIMIT,
-        FieldBit.PRICE_DECIMAL_INFO,
-        FieldBit.LOT_SIZE,
-        FieldBit.PRE_IOPV,
-        FieldBit.SPEED_PCT,
-        FieldBit.FLAG_KCB,
-        FieldBit.PE_TTM,
-        FieldBit.PE_STATIC,
-        FieldBit.MAIN_NET_AMOUNT,
-        FieldBit.VOL_SPEED_PCT,
-        FieldBit.SHORT_TURNOVER_PCT,
-        FieldBit.CIRCULATING_CAPITAL_Z,
-    )
+    FUNDAMENTAL = (FieldBit.TOTAL_SHARES, FieldBit.FLOAT_SHARES, FieldBit.EPS, FieldBit.NET_ASSETS)
+    ENHANCED = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.VOL, FieldBit.FLOAT_SHARES, FieldBit.ACTIVITY)
+    AH_CODE_FIELDS = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.VOL, FieldBit.AH_CODE, FieldBit.LOT_SIZE, FieldBit.INDUSTRY)
+    BOARD_STATS = (FieldBit.LIMIT_UP_COUNT, FieldBit.LIMIT_DOWN_COUNT, FieldBit.UP_COUNT, FieldBit.DOWN_COUNT)
+    HANDICAP = (FieldBit.BID_PRICE, FieldBit.BID2_PRICE, FieldBit.BID3_PRICE, FieldBit.BID4_PRICE, FieldBit.BID5_PRICE, FieldBit.ASK_PRICE, FieldBit.ASK2_PRICE, FieldBit.ASK3_PRICE, FieldBit.ASK4_PRICE, FieldBit.ASK5_PRICE, FieldBit.BID_VOLUME, FieldBit.BID2_VOLUME, FieldBit.BID3_VOLUME, FieldBit.BID4_VOLUME, FieldBit.BID5_VOLUME, FieldBit.ASK_VOLUME, FieldBit.ASK2_VOLUME, FieldBit.ASK3_VOLUME, FieldBit.ASK4_VOLUME, FieldBit.ASK5_VOLUME)
+    COMMON = (FieldBit.PRE_CLOSE, FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.VOL, FieldBit.VOL_RATIO, FieldBit.AMOUNT, FieldBit.TOTAL_SHARES, FieldBit.FLOAT_SHARES, FieldBit.EPS, FieldBit.NET_ASSETS, FieldBit.SECURITY_TYPE_PRICE, FieldBit.TOTAL_MARKET_CAP_AB, FieldBit.PE_DYNAMIC, FieldBit.LOT_SIZE_INFO, FieldBit.DIVIDEND_YIELD, FieldBit.LAST_VOLUME, FieldBit.TURNOVER, FieldBit.STOCK_TAG_FLAGS, FieldBit.DECIMAL_POINT, FieldBit.BUY_PRICE_LIMIT, FieldBit.SELL_PRICE_LIMIT, FieldBit.PRICE_DECIMAL_INFO, FieldBit.LOT_SIZE, FieldBit.PRE_IOPV, FieldBit.SPEED_PCT, FieldBit.FLAG_KCB, FieldBit.PE_TTM, FieldBit.PE_STATIC, FieldBit.MAIN_NET_AMOUNT, FieldBit.VOL_SPEED_PCT, FieldBit.SHORT_TURNOVER_PCT, FieldBit.CIRCULATING_CAPITAL_Z)
     DEBUG = (-1, "", "调试用全字段")
     ALL = tuple(FieldBit)
 
@@ -1024,7 +882,7 @@ class FieldSelection:
 
     __slots__ = ("_fields",)
 
-    def __init__(self, *parts: "FieldBit | PresetField | FieldSelection") -> None:
+    def __init__(self, *parts: "FieldBit | PresetField | FieldSelection"):
         seen: set[FieldBit] = set()
         result: list[FieldBit] = []
         for part in parts:
@@ -1086,10 +944,7 @@ def normalize_fields(fields: "Fields") -> FieldSelection:
     return FieldSelection(*fields)
 
 
-def build_bitmap(
-    fields: "Fields",
-    exclude_flags: int = 0,
-) -> bytearray:
+def build_bitmap(fields: "Fields", exclude_flags: int = 0) -> bytearray:
     """将字段选择转换为 20 字节请求位图。
 
     Parameters
@@ -1203,14 +1058,7 @@ def parse_block_dat(data: bytes, filename: str = "") -> list["TdxBlock"]:
             if code:
                 codes.append(code)
 
-        results.append(
-            TdxBlock(
-                name=name,
-                category=category,
-                count=stock_count,
-                codes=codes,
-            )
-        )
+        results.append(TdxBlock(name=name, category=category, count=stock_count, codes=codes))
 
         # 跳过整个 2813 字节的记录块
         pos += 2813
@@ -1246,9 +1094,7 @@ def get_datetime_day(data: bytes, pos: int) -> tuple[int, int, int, int]:
     return year, month, day, pos + 4
 
 
-def get_datetime(
-    category: int, data: bytes, pos: int
-) -> tuple[int, int, int, int, int, int]:
+def get_datetime(category: int, data: bytes, pos: int) -> tuple[int, int, int, int, int, int]:
     """根据 KlineCategory 选择解析格式。
 
     Returns:
@@ -1293,10 +1139,7 @@ def parse_financial_file_list(data: bytes) -> list[tuple[str, str, int]]:
     return results
 
 
-def parse_financial_dat(
-    data: bytes,
-    report_date: int = 0,
-) -> list[tuple[str, int, int, list[float]]]:
+def parse_financial_dat(data: bytes, report_date: int = 0) -> list[tuple[str, int, int, list[float]]]:
     """解析 gpcw*.zip 内的 .dat 二进制文件。
 
     二进制格式（参考 pytdx.crawler.history_financial_crawler）：
@@ -1350,9 +1193,7 @@ def parse_financial_dat(
         if idx_pos + index_size > len(data):
             break
 
-        code_bytes, market_byte, file_offset = struct.unpack(
-            index_fmt, data[idx_pos : idx_pos + index_size]
-        )
+        code_bytes, market_byte, file_offset = struct.unpack(index_fmt, data[idx_pos : idx_pos + index_size])
         code = code_bytes.decode("ascii", errors="replace").rstrip("\x00")
 
         if not code or file_offset == 0:
@@ -1379,12 +1220,7 @@ class FrameHeader:
 
 def parse_header(buf: bytes) -> FrameHeader:
     """解析 16 字节响应帧头。"""
-    magic, seq_id, method, zipsize, unzipsize = unpack_from(
-        _HEADER_FMT,
-        buf,
-        0,
-        "frame header",
-    )
+    magic, seq_id, method, zipsize, unzipsize = unpack_from(_HEADER_FMT, buf, 0, "frame header")
     return FrameHeader(magic, seq_id, method, zipsize, unzipsize)
 
 
@@ -1394,9 +1230,7 @@ def decompress_body(header: FrameHeader, raw_body: bytes) -> bytes:
     zipsize == unzipsize 时直接返回原始字节；否则 zlib 解压。
     """
     if len(raw_body) != header.zipsize:
-        raise TdxDecodeError(
-            f"frame body 长度不符: header={header.zipsize}, actual={len(raw_body)}"
-        )
+        raise TdxDecodeError(f"frame body 长度不符: header={header.zipsize}, actual={len(raw_body)}")
     if header.zipsize == header.unzipsize:
         body = raw_body
     else:
@@ -1406,9 +1240,7 @@ def decompress_body(header: FrameHeader, raw_body: bytes) -> bytes:
             raise TdxDecodeError(f"frame body zlib 解压失败: {e}") from e
 
     if len(body) != header.unzipsize:
-        raise TdxDecodeError(
-            f"frame body 解压长度不符: header={header.unzipsize}, actual={len(body)}"
-        )
+        raise TdxDecodeError(f"frame body 解压长度不符: header={header.unzipsize}, actual={len(body)}")
     return body
 
 def parse_tdxhy_cfg(content: bytes) -> dict[str, tuple[str, str]]:
@@ -1510,23 +1342,14 @@ def get_no_limit_window_days(market: Market, code: str, name: str) -> int:
 
 def _is_index_like(market: Market, code: str, name: str) -> bool:
     """判断是否为指数/板块类代码。"""
-    if market == Market.SH and code.startswith(
-        ("000", "880", "881", "882", "883", "884", "885", "999")
-    ):
+    if market == Market.SH and code.startswith(("000", "880", "881", "882", "883", "884", "885", "999")):
         return True
     if market == Market.SZ and code.startswith(("395", "399")):
         return True
     return "指数" in name or "板块" in name
 
 
-def compute_price_limits(
-    market: Market,
-    code: str,
-    name: str,
-    pre_close: float,
-    finance_info: FinanceInfo = None,
-    listed_days: int = None,
-) -> tuple[float, float]:
+def compute_price_limits(market: Market, code: str, name: str, pre_close: float, finance_info: FinanceInfo = None, listed_days: int = None) -> tuple[float, float]:
     """根据板块规则计算涨跌停价。
 
     Returns:

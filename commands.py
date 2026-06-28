@@ -27,9 +27,7 @@ T = TypeVar("T")
 # 从 pytdx 源码原文复制，去除空格
 SETUP_CMD1: Final[bytes] = bytes.fromhex("0c0218930001030003000d0001")
 SETUP_CMD2: Final[bytes] = bytes.fromhex("0c0218940001030003000d0002")
-SETUP_CMD3: Final[bytes] = bytes.fromhex(
-    "0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002"
-)
+SETUP_CMD3: Final[bytes] = bytes.fromhex("0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002")
 
 SETUP_COMMANDS: Final[tuple[bytes, ...]] = (SETUP_CMD1, SETUP_CMD2, SETUP_CMD3)
 """获取实时五档行情命令（最多 80 只/次）。
@@ -105,13 +103,7 @@ class TdxOfflineError(TdxError):
 配置文件示例::
 
     {
-      "best_host": "180.153.18.170",
-      "best_host_updated_at": "2026-05-22T10:30:00",
-      "known_hosts": ["111.229.247.189", ...],
-      "calc_hosts": ["120.76.152.87"],
-      "mac_hosts": ["121.36.248.138", ...],
-      "port": 7709,
-      "timeout": 15.0
+      "best_host": "180.153.18.170", "best_host_updated_at": "2026-05-22T10:30:00", "known_hosts": ["111.229.247.189", ...], "calc_hosts": ["120.76.152.87"], "mac_hosts": ["121.36.248.138", ...], "port": 7709, "timeout": 15.0
     }
 
 环境变量覆盖::
@@ -137,93 +129,19 @@ _CONFIG_FILE = _CONFIG_DIR / "config.json"
 # ---------------------------------------------------------------------------
 
 _FALLBACK_HOSTS: list[str] = [
-    "111.229.247.189",
-    "150.158.160.2",
-    "180.153.18.170",
-    "124.71.187.122",
-    "180.153.18.171",
-    "180.153.18.172",
-    "119.147.212.81",
-    "115.238.56.198",
-    "115.238.90.165",
-    "218.75.126.9",
-    "47.107.75.159",
-    "59.175.238.38",
-    "110.41.147.114",
-    "110.41.2.72",
-    "101.33.225.16",
-    "175.178.112.197",
-    "175.178.128.227",
-    "43.139.95.83",
-    "124.223.163.242",
-    "122.51.120.217",
-    "123.60.164.122",
-    "124.70.199.56",
-    "62.234.50.143",
-    "81.70.151.186",
-    "82.156.214.79",
-    "159.75.29.111",
-    "43.139.18.171",
-    "81.71.32.47",
-    "122.51.232.182",
-    "118.25.98.114",
-    "121.36.225.169",
-    "123.60.70.228",
-    "123.60.73.44",
-    "124.70.133.119",
-    "124.71.187.72",
-    "119.97.185.59",
-    "129.204.230.128",
-    "101.42.240.54",
-    "124.71.9.153",
-    "123.60.84.66",
-    "111.230.186.52",
-    "101.43.159.194",
-    "120.53.8.251",
-    "152.136.191.169",
-    "116.205.163.254",
-    "116.205.171.132",
-    "116.205.183.150",
-    "49.232.15.141",
-    "82.156.174.84",
-    "101.42.164.241",
-    "101.35.121.35",
-    "111.231.113.208",
-]
+    "111.229.247.189", "150.158.160.2", "180.153.18.170", "124.71.187.122", "180.153.18.171", "180.153.18.172", "119.147.212.81", "115.238.56.198", "115.238.90.165", "218.75.126.9", "47.107.75.159", "59.175.238.38", "110.41.147.114", "110.41.2.72", "101.33.225.16", "175.178.112.197", "175.178.128.227", "43.139.95.83", "124.223.163.242", "122.51.120.217", "123.60.164.122", "124.70.199.56", "62.234.50.143", "81.70.151.186", "82.156.214.79", "159.75.29.111", "43.139.18.171", "81.71.32.47", "122.51.232.182", "118.25.98.114", "121.36.225.169", "123.60.70.228", "123.60.73.44", "124.70.133.119", "124.71.187.72", "119.97.185.59", "129.204.230.128", "101.42.240.54", "124.71.9.153", "123.60.84.66", "111.230.186.52", "101.43.159.194", "120.53.8.251", "152.136.191.169", "116.205.163.254", "116.205.171.132", "116.205.183.150", "49.232.15.141", "82.156.174.84", "101.42.164.241", "101.35.121.35", "111.231.113.208", ]
 
 _FALLBACK_CALC_HOSTS: list[str] = [
-    "120.76.152.87",
-]
+    "120.76.152.87", ]
 
 _FALLBACK_MAC_HOSTS: list[str] = [
-    "121.36.248.138",
-    "123.60.47.136",
-    "121.37.207.165",
-]
+    "121.36.248.138", "123.60.47.136", "121.37.207.165", ]
 
 _FALLBACK_EX_HOSTS: list[str] = [
-    "112.74.214.43",
-    "120.25.218.6",
-    "43.139.173.246",
-    "159.75.90.107",
-    "106.52.170.195",
-    "139.9.191.175",
-    "175.24.47.69",
-    "150.158.9.199",
-    "150.158.20.127",
-    "49.235.119.116",
-    "49.234.13.160",
-    "116.205.143.214",
-    "124.71.223.19",
-    "113.45.175.47",
-    "123.60.173.210",
-    "118.89.69.202",
-]
+    "112.74.214.43", "120.25.218.6", "43.139.173.246", "159.75.90.107", "106.52.170.195", "139.9.191.175", "175.24.47.69", "150.158.9.199", "150.158.20.127", "49.235.119.116", "49.234.13.160", "116.205.143.214", "124.71.223.19", "113.45.175.47", "123.60.173.210", "118.89.69.202", ]
 
 _FALLBACK_MAC_EX_HOSTS: list[str] = [
-    "116.205.135.205",
-    "121.37.232.167",
-]
+    "116.205.135.205", "121.37.232.167", ]
 
 _FALLBACK_PORT = 7709
 _FALLBACK_TIMEOUT = 15.0
@@ -243,7 +161,7 @@ def _load() -> dict[str, Any]:
     return {}
 
 
-def _save(data: dict[str, Any]) -> None:
+def _save(data: dict[str, Any]):
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _CONFIG_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
@@ -338,7 +256,7 @@ def get_timeout() -> float:
 # ---------------------------------------------------------------------------
 
 
-def save_best_host(host: str) -> None:
+def save_best_host(host: str):
     """保存最佳主机到配置文件；首次写入时同时补全默认配置。"""
     cfg = _load()
     cfg["best_host"] = host
@@ -358,7 +276,7 @@ def save_best_host(host: str) -> None:
     _save(cfg)
 
 
-def save_best_ex_host(host: str) -> None:
+def save_best_ex_host(host: str):
     """保存最佳扩展行情主机到配置文件。"""
     cfg = _load()
     cfg["best_ex_host"] = host
@@ -370,7 +288,7 @@ def save_best_ex_host(host: str) -> None:
     _save(cfg)
 
 
-def save_best_mac_ex_host(host: str) -> None:
+def save_best_mac_ex_host(host: str):
     """保存最佳 MAC 协议扩展行情主机到配置文件。"""
     cfg = _load()
     cfg["best_mac_ex_host"] = host
@@ -388,11 +306,7 @@ CALC_HOSTS = get_calc_hosts()
 MAC_HOSTS = get_mac_hosts()
 
 
-def ping_host(
-    host: str,
-    port: int = None,
-    timeout: float = 5.0,
-) -> float:
+def ping_host(host: str, port: int = None, timeout: float = 5.0) -> float:
     """测量连接到指定服务器并完成握手所需的时间（秒）。
 
     返回延迟（秒），连接失败时返回 None。
@@ -423,11 +337,7 @@ def ping_host(
             pass
 
 
-def ping_all(
-    hosts: list[str] = None,
-    port: int = None,
-    timeout: float = 5.0,
-) -> list[tuple[str, float]]:
+def ping_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
     """并发测量多台服务器延迟，返回按延迟排序的 (host, latency_seconds) 列表。
 
     不可达的服务器不包含在结果中。
@@ -455,11 +365,7 @@ def ping_all(
     return results
 
 
-def ping_mac_all(
-    hosts: list[str] = None,
-    port: int = None,
-    timeout: float = 5.0,
-) -> list[tuple[str, float]]:
+def ping_mac_all(hosts: list[str] = None, port: int = None, timeout: float = 5.0) -> list[tuple[str, float]]:
     """并发测量多台 MAC 服务器延迟，返回按延迟排序的 (host, latency_seconds) 列表。"""
     if hosts is None:
         hosts = get_mac_hosts()
@@ -485,12 +391,7 @@ class TdxConnection:
             result = conn.execute(SomeCommand(...))
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None):
         self.host = host if host is not None else get_best_host()
         self.port = port if port is not None else get_port()
         self.timeout = timeout if timeout is not None else get_timeout()
@@ -502,7 +403,7 @@ class TdxConnection:
         self._last_active: float = 0.0
         self._consecutive_heartbeats: int = 0
 
-    def connect(self) -> None:
+    def connect(self):
         """建立 TCP 连接并完成握手（发送3条 setup 命令）。"""
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(self.timeout)
@@ -522,7 +423,7 @@ class TdxConnection:
             self._sock = None
             raise
 
-    def close(self) -> None:
+    def close(self):
         """关闭连接。"""
         self.stop_heartbeat()
         if self._sock is not None:
@@ -558,31 +459,22 @@ class TdxConnection:
         self.connect()
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
     # ------------------------------------------------------------------ #
     # heartbeat
     # ------------------------------------------------------------------ #
 
-    def start_heartbeat(self, interval: float = _DEFAULT_HEARTBEAT_INTERVAL) -> None:
+    def start_heartbeat(self, interval: float = _DEFAULT_HEARTBEAT_INTERVAL):
         """启动心跳守护线程，定期发送 setup 包保活。"""
         self._heartbeat_interval = interval
         self._last_active = time.monotonic()
         self._stop_event = threading.Event()
-        self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat_loop,
-            daemon=True,
-            name="tdx-heartbeat",
-        )
+        self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True, name="tdx-heartbeat")
         self._heartbeat_thread.start()
 
-    def stop_heartbeat(self) -> None:
+    def stop_heartbeat(self):
         """停止心跳线程。"""
         stop_event = self._stop_event
         thread = self._heartbeat_thread
@@ -594,7 +486,7 @@ class TdxConnection:
         self._heartbeat_thread = None
         self._heartbeat_interval = 0
 
-    def _heartbeat_loop(self) -> None:
+    def _heartbeat_loop(self):
         """心跳循环：在后台线程中运行。"""
         assert self._stop_event is not None
         interval = self._heartbeat_interval
@@ -630,7 +522,7 @@ class TdxConnection:
     # internals
     # ------------------------------------------------------------------ #
 
-    def _send_setup(self) -> None:
+    def _send_setup(self):
         """按序发送三条握手命令并丢弃响应。"""
         assert self._sock is not None
         for cmd_bytes in SETUP_COMMANDS:
@@ -664,12 +556,7 @@ class AsyncTdxConnection:
             result = await conn.execute(SomeCommand(...))
     """
 
-    def __init__(
-        self,
-        host: str = None,
-        port: int = None,
-        timeout: float = None,
-    ) -> None:
+    def __init__(self, host: str = None, port: int = None, timeout: float = None):
         self.host = host if host is not None else get_best_host()
         self.port = port if port is not None else get_port()
         self.timeout = timeout if timeout is not None else get_timeout()
@@ -678,14 +565,14 @@ class AsyncTdxConnection:
         # 单连接不支持请求复用；所有 IO 在连接内串行执行。
         self._io_lock = asyncio.Lock()
 
-    async def connect(self) -> None:
+    async def connect(self):
         """建立 TCP 连接并完成握手。"""
         async with self._io_lock:
             if self._writer is not None and not self._writer.is_closing():
                 return
             await self._connect_unlocked()
 
-    async def close(self) -> None:
+    async def close(self):
         """关闭连接。"""
         async with self._io_lock:
             await self._close_unlocked()
@@ -715,12 +602,9 @@ class AsyncTdxConnection:
             body = decompress_body(header, raw_body)
             return cmd.parse_response(body)
 
-    async def _connect_unlocked(self) -> None:
+    async def _connect_unlocked(self):
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port),
-                timeout=self.timeout,
-            )
+            reader, writer = await asyncio.wait_for(asyncio.open_connection(self.host, self.port), timeout=self.timeout)
         except (OSError, asyncio.TimeoutError) as e:
             raise TdxConnectionError(f"无法连接 {self.host}:{self.port}: {e}") from e
         self._reader = reader
@@ -731,7 +615,7 @@ class AsyncTdxConnection:
             await self._close_unlocked()
             raise
 
-    async def _close_unlocked(self) -> None:
+    async def _close_unlocked(self):
         if self._writer is not None:
             try:
                 self._writer.close()
@@ -749,19 +633,14 @@ class AsyncTdxConnection:
         await self.connect()
         return self
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
+    async def __aexit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         await self.close()
 
     # ------------------------------------------------------------------ #
     # internals
     # ------------------------------------------------------------------ #
 
-    async def _send_setup(self) -> None:
+    async def _send_setup(self):
         """按序发送三条握手命令并丢弃响应。"""
         assert self._writer is not None
         assert self._reader is not None
@@ -779,10 +658,7 @@ class AsyncTdxConnection:
     async def _recv_exact(self, n: int) -> bytes:
         """读满 n 字节。"""
         assert self._reader is not None
-        data = await asyncio.wait_for(
-            self._reader.readexactly(n),
-            timeout=self.timeout,
-        )
+        data = await asyncio.wait_for(self._reader.readexactly(n), timeout=self.timeout)
         return data
 
 class BaseCommand(ABC, Generic[T]):
@@ -811,7 +687,7 @@ class GetBlockInfoMetaCmd(BaseCommand[tuple[int, str]]):
         filename: 板块文件名，如 'block_zs.dat', 'block_gn.dat' 等。
     """
 
-    def __init__(self, filename: str) -> None:
+    def __init__(self, filename: str):
         self.filename = filename.encode("ascii")
 
     def build_request(self) -> bytes:
@@ -838,7 +714,7 @@ class GetBlockInfoCmd(BaseCommand[bytes]):
         length: 请求数据长度。
     """
 
-    def __init__(self, filename: str, start: int, length: int) -> None:
+    def __init__(self, filename: str, start: int, length: int):
         self.filename = filename.encode("ascii")
         self.start = start
         self.length = length
@@ -858,7 +734,7 @@ class GetBlockInfoCmd(BaseCommand[bytes]):
 class GetCompanyInfoCategoryCmd(BaseCommand[list[CompanyInfoCategory]]):
     """获取公司信息文件目录（文件名列表 + 每段偏移/长度）。"""
 
-    def __init__(self, market: Market, code: str) -> None:
+    def __init__(self, market: Market, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -885,14 +761,7 @@ class GetCompanyInfoCategoryCmd(BaseCommand[list[CompanyInfoCategory]]):
                 raw = b[:nul] if nul != -1 else b
                 return raw.decode("gbk", errors="replace")
 
-            results.append(
-                CompanyInfoCategory(
-                    name=_decode(name_b),
-                    filename=_decode(filename_b),
-                    start=start,
-                    length=length,
-                )
-            )
+            results.append(CompanyInfoCategory(name=_decode(name_b), filename=_decode(filename_b), start=start, length=length))
 
         return results
 
@@ -900,7 +769,7 @@ class GetCompanyInfoCategoryCmd(BaseCommand[list[CompanyInfoCategory]]):
 class GetCompanyInfoContentCmd(BaseCommand[str]):
     """按文件名、偏移、长度读取公司信息文本（GBK 编码）。"""
 
-    def __init__(self, market: Market, code: str, filename: str, offset: int, length: int) -> None:
+    def __init__(self, market: Market, code: str, filename: str, offset: int, length: int):
         self.market = market
         self.code = code.encode("utf-8")
         self.filename = filename.encode("gbk")
@@ -910,16 +779,7 @@ class GetCompanyInfoContentCmd(BaseCommand[str]):
     def build_request(self) -> bytes:
         fname_padded = (self.filename + b"\x00" * 80)[:80]
         header = bytes.fromhex("0c07109c0001680068 00d002".replace(" ", ""))
-        return header + struct.pack(
-            "<H6sH80sIII",
-            int(self.market),
-            self.code,
-            0,
-            fname_padded,
-            self.offset,
-            self.length,
-            0,
-        )
+        return header + struct.pack("<H6sH80sIII", int(self.market), self.code, 0, fname_padded, self.offset, self.length, 0)
 
     def parse_response(self, body: bytes) -> str:
         # 前12字节：10字节未知 + 2字节长度
@@ -932,7 +792,7 @@ class GetCompanyInfoContentCmd(BaseCommand[str]):
 class GetFinanceInfoCmd(BaseCommand[FinanceInfo]):
     """获取单只股票最新财务数据。"""
 
-    def __init__(self, market: Market, code: str) -> None:
+    def __init__(self, market: Market, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -946,43 +806,7 @@ class GetFinanceInfoCmd(BaseCommand[FinanceInfo]):
         pos += 7
 
         fields = struct.unpack(_FIN_FMT, slice_bytes(body, pos, _FIN_SIZE, "finance_info body"))
-        (
-            liutong_guben,
-            province,
-            industry,
-            updated_date,
-            ipo_date,
-            zong_guben,
-            guojia_gu,
-            faqiren_faren_gu,
-            faren_gu,
-            b_gu,
-            h_gu,
-            zhigong_gu,
-            zong_zichan,
-            liudong_zichan,
-            guding_zichan,
-            wuxing_zichan,
-            gudong_renshu,
-            liudong_fuzhai,
-            changqi_fuzhai,
-            ziben_gongjijin,
-            jing_zichan,
-            zhuying_shouru,
-            zhuying_lirun,
-            yingshou_zhangkuan,
-            yingye_lirun,
-            touzi_shouyu,
-            jingying_xianjinliu,
-            zong_xianjinliu,
-            cunhuo,
-            lirun_zonghe,
-            shuihou_lirun,
-            jing_lirun,
-            weifen_lirun,
-            meigujing_zichan,
-            reserve2,
-        ) = fields
+        (liutong_guben, province, industry, updated_date, ipo_date, zong_guben, guojia_gu, faqiren_faren_gu, faren_gu, b_gu, h_gu, zhigong_gu, zong_zichan, liudong_zichan, guding_zichan, wuxing_zichan, gudong_renshu, liudong_fuzhai, changqi_fuzhai, ziben_gongjijin, jing_zichan, zhuying_shouru, zhuying_lirun, yingshou_zhangkuan, yingye_lirun, touzi_shouyu, jingying_xianjinliu, zong_xianjinliu, cunhuo, lirun_zonghe, shuihou_lirun, jing_lirun, weifen_lirun, meigujing_zichan, reserve2) = fields
 
         _SCALE = 10000.0  # 财务数据单位：万元/万股
         try:
@@ -990,52 +814,13 @@ class GetFinanceInfoCmd(BaseCommand[FinanceInfo]):
         except ValueError as e:
             raise TdxDecodeError(f"finance_info 非法 market 值: {market_b}") from e
 
-        return FinanceInfo(
-            market=market,
-            code=code_b.decode("utf-8").rstrip("\x00"),
-            liutong_guben=liutong_guben * _SCALE,
-            zong_guben=zong_guben * _SCALE,
-            guojia_gu=guojia_gu * _SCALE,
-            faqiren_faren_gu=faqiren_faren_gu * _SCALE,
-            faren_gu=faren_gu * _SCALE,
-            b_gu=b_gu * _SCALE,
-            h_gu=h_gu * _SCALE,
-            zhigong_gu=zhigong_gu * _SCALE,
-            province=province,
-            industry=industry,
-            updated_date=updated_date,
-            ipo_date=ipo_date,
-            gudong_renshu=gudong_renshu,
-            zong_zichan=zong_zichan * _SCALE,
-            liudong_zichan=liudong_zichan * _SCALE,
-            guding_zichan=guding_zichan * _SCALE,
-            wuxing_zichan=wuxing_zichan * _SCALE,
-            liudong_fuzhai=liudong_fuzhai * _SCALE,
-            changqi_fuzhai=changqi_fuzhai * _SCALE,
-            ziben_gongjijin=ziben_gongjijin * _SCALE,
-            jing_zichan=jing_zichan * _SCALE,
-            zhuying_shouru=zhuying_shouru * _SCALE,
-            zhuying_lirun=zhuying_lirun * _SCALE,
-            yingshou_zhangkuan=yingshou_zhangkuan * _SCALE,
-            yingye_lirun=yingye_lirun * _SCALE,
-            touzi_shouyu=touzi_shouyu * _SCALE,
-            jingying_xianjinliu=jingying_xianjinliu * _SCALE,
-            zong_xianjinliu=zong_xianjinliu * _SCALE,
-            cunhuo=cunhuo * _SCALE,
-            lirun_zonghe=lirun_zonghe * _SCALE,
-            shuihou_lirun=shuihou_lirun * _SCALE,
-            jing_lirun=jing_lirun * _SCALE,
-            weifen_lirun=weifen_lirun * _SCALE,
-            meigujing_zichan=meigujing_zichan,
-            reserve2=reserve2,
-            _raw=body[pos : pos + _FIN_SIZE],
-        )
+        return FinanceInfo(market=market, code=code_b.decode("utf-8").rstrip("\x00"), liutong_guben=liutong_guben * _SCALE, zong_guben=zong_guben * _SCALE, guojia_gu=guojia_gu * _SCALE, faqiren_faren_gu=faqiren_faren_gu * _SCALE, faren_gu=faren_gu * _SCALE, b_gu=b_gu * _SCALE, h_gu=h_gu * _SCALE, zhigong_gu=zhigong_gu * _SCALE, province=province, industry=industry, updated_date=updated_date, ipo_date=ipo_date, gudong_renshu=gudong_renshu, zong_zichan=zong_zichan * _SCALE, liudong_zichan=liudong_zichan * _SCALE, guding_zichan=guding_zichan * _SCALE, wuxing_zichan=wuxing_zichan * _SCALE, liudong_fuzhai=liudong_fuzhai * _SCALE, changqi_fuzhai=changqi_fuzhai * _SCALE, ziben_gongjijin=ziben_gongjijin * _SCALE, jing_zichan=jing_zichan * _SCALE, zhuying_shouru=zhuying_shouru * _SCALE, zhuying_lirun=zhuying_lirun * _SCALE, yingshou_zhangkuan=yingshou_zhangkuan * _SCALE, yingye_lirun=yingye_lirun * _SCALE, touzi_shouyu=touzi_shouyu * _SCALE, jingying_xianjinliu=jingying_xianjinliu * _SCALE, zong_xianjinliu=zong_xianjinliu * _SCALE, cunhuo=cunhuo * _SCALE, lirun_zonghe=lirun_zonghe * _SCALE, shuihou_lirun=shuihou_lirun * _SCALE, jing_lirun=jing_lirun * _SCALE, weifen_lirun=weifen_lirun * _SCALE, meigujing_zichan=meigujing_zichan, reserve2=reserve2, _raw=body[pos : pos + _FIN_SIZE])
 
 
 class GetHistoryFundFlowCmd(BaseCommand[list[HistoricalFundFlow]]):
     """获取历史日线资金流向序列。"""
 
-    def __init__(self, market: Market, code: str, start: int, count: int) -> None:
+    def __init__(self, market: Market, code: str, start: int, count: int):
         self.market = market
         self.code = code.encode("utf-8")
         self.start = start
@@ -1043,23 +828,7 @@ class GetHistoryFundFlowCmd(BaseCommand[list[HistoricalFundFlow]]):
 
     def build_request(self) -> bytes:
         # Header (12 bytes) + Payload (28 bytes) = 40 bytes
-        return struct.pack(
-            "<HIHHHH6sHHHHIIH",
-            0x010C,
-            0x01016408,
-            0x001C,
-            0x001C,
-            0x052D,
-            int(self.market),
-            self.code,
-            22,
-            1,
-            self.start,
-            self.count,
-            0,
-            0,
-            0,
-        )
+        return struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(self.market), self.code, 22, 1, self.start, self.count, 0, 0, 0)
 
     def parse_response(self, body: bytes) -> list[HistoricalFundFlow]:
         # 响应格式：9字节头 + 2字节数量 + 每条记录 36 字节
@@ -1083,21 +852,7 @@ class GetHistoryFundFlowCmd(BaseCommand[list[HistoricalFundFlow]]):
             month = (raw_date // 100) % 100
             day = raw_date % 100
 
-            results.append(
-                HistoricalFundFlow(
-                    year=year,
-                    month=month,
-                    day=day,
-                    super_in=_decode_volume(raw_data[1]),
-                    large_in=_decode_volume(raw_data[2]),
-                    medium_in=_decode_volume(raw_data[3]),
-                    small_in=_decode_volume(raw_data[4]),
-                    super_out=_decode_volume(raw_data[5]),
-                    large_out=_decode_volume(raw_data[6]),
-                    medium_out=_decode_volume(raw_data[7]),
-                    small_out=_decode_volume(raw_data[8]),
-                )
-            )
+            results.append(HistoricalFundFlow(year=year, month=month, day=day, super_in=_decode_volume(raw_data[1]), large_in=_decode_volume(raw_data[2]), medium_in=_decode_volume(raw_data[3]), small_in=_decode_volume(raw_data[4]), super_out=_decode_volume(raw_data[5]), large_out=_decode_volume(raw_data[6]), medium_out=_decode_volume(raw_data[7]), small_out=_decode_volume(raw_data[8])))
             pos += 36
 
         return results
@@ -1105,7 +860,7 @@ class GetHistoryFundFlowCmd(BaseCommand[list[HistoricalFundFlow]]):
 class GetMinuteTimeDataCmd(BaseCommand[list[MinuteBar]]):
     """获取今日分时数据（全天 240 条）。"""
 
-    def __init__(self, market: Market, code: str) -> None:
+    def __init__(self, market: Market, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -1120,7 +875,7 @@ class GetMinuteTimeDataCmd(BaseCommand[list[MinuteBar]]):
 class GetHistoryMinuteTimeDataCmd(BaseCommand[list[MinuteBar]]):
     """获取历史某日分时数据（date 格式 YYYYMMDD）。"""
 
-    def __init__(self, market: Market, code: str, date: int) -> None:
+    def __init__(self, market: Market, code: str, date: int):
         self.market = market
         self.code = code.encode("utf-8")
         self.date = date
@@ -1148,14 +903,7 @@ def _parse_minute_body(body: bytes, skip: int = 4) -> list[MinuteBar]:
         vol, pos = get_price(body, pos)
 
         last_price += price_diff
-        bars.append(
-            MinuteBar(
-                price=last_price / 100.0,
-                vol=vol,
-                _unknown_1=unknown_1,
-                _raw=body[record_start:pos],
-            )
-        )
+        bars.append(MinuteBar(price=last_price / 100.0, vol=vol, _unknown_1=unknown_1, _raw=body[record_start:pos]))
 
     return bars
 
@@ -1168,7 +916,7 @@ class GetReportFileCmd(BaseCommand[bytes]):
         length: 请求数据长度（建议 30000）。
     """
 
-    def __init__(self, filename: str, start: int, length: int = 30000) -> None:
+    def __init__(self, filename: str, start: int, length: int = 30000):
         self.filename = filename.encode("ascii")
         self.start = start
         self.length = length
@@ -1197,14 +945,7 @@ class GetSecurityBarsCmd(BaseCommand[list[SecurityBar]]):
         count:    返回条数（最多 800）
     """
 
-    def __init__(
-        self,
-        market: Market,
-        code: str,
-        category: KlineCategory,
-        start: int,
-        count: int = 800,
-    ) -> None:
+    def __init__(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800):
         self.market = market
         self.code = code.encode("utf-8")
         self.category = category
@@ -1213,23 +954,7 @@ class GetSecurityBarsCmd(BaseCommand[list[SecurityBar]]):
 
     def build_request(self) -> bytes:
         # Header (12 bytes) + Payload (28 bytes) = 40 bytes
-        return struct.pack(
-            "<HIHHHH6sHHHHIIH",
-            0x010C,
-            0x01016408,
-            0x001C,
-            0x001C,
-            0x052D,
-            int(self.market),
-            self.code,
-            int(self.category),
-            1,
-            self.start,
-            self.count,
-            0,
-            0,
-            0,
-        )
+        return struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(self.market), self.code, int(self.category), 1, self.start, self.count, 0, 0, 0)
 
     def parse_response(self, body: bytes) -> list[SecurityBar]:
         (ret_count,) = unpack_from("<H", body, 0, "security_bars header")
@@ -1257,22 +982,7 @@ class GetSecurityBarsCmd(BaseCommand[list[SecurityBar]]):
             low_abs = open_abs + low_diff
             pre_diff_base = open_abs + close_diff
 
-            bars.append(
-                SecurityBar(
-                    open=open_abs / 1000.0,
-                    close=close_abs / 1000.0,
-                    high=high_abs / 1000.0,
-                    low=low_abs / 1000.0,
-                    vol=vol,
-                    amount=amount,
-                    year=year,
-                    month=month,
-                    day=day,
-                    hour=hour,
-                    minute=minute,
-                    _raw=body[record_start:pos],
-                )
-            )
+            bars.append(SecurityBar(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0, low=low_abs / 1000.0, vol=vol, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
 
         return bars
 
@@ -1312,22 +1022,7 @@ class GetIndexBarsCmd(GetSecurityBarsCmd):
             low_abs = open_abs + low_diff
             pre_diff_base = open_abs + close_diff
 
-            bars.append(
-                SecurityBar(
-                    open=open_abs / 1000.0,
-                    close=close_abs / 1000.0,
-                    high=high_abs / 1000.0,
-                    low=low_abs / 1000.0,
-                    vol=vol,
-                    amount=amount,
-                    year=year,
-                    month=month,
-                    day=day,
-                    hour=hour,
-                    minute=minute,
-                    _raw=body[record_start:pos],
-                )
-            )
+            bars.append(SecurityBar(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0, low=low_abs / 1000.0, vol=vol, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
 
         return bars
 
@@ -1337,7 +1032,7 @@ class GetSecurityCountCmd(BaseCommand[int]):
     心跳命令也可复用此命令（pytdx 用随机 market 发心跳）。
     """
 
-    def __init__(self, market: Market) -> None:
+    def __init__(self, market: Market):
         self.market = market
 
     def build_request(self) -> bytes:
@@ -1352,7 +1047,7 @@ class GetSecurityCountCmd(BaseCommand[int]):
 class GetSecurityListCmd(BaseCommand[list[SecurityInfo]]):
     """获取指定市场从 start 开始的证券列表。"""
 
-    def __init__(self, market: Market, start: int) -> None:
+    def __init__(self, market: Market, start: int):
         self.market = market
         self.start = start
 
@@ -1369,15 +1064,8 @@ class GetSecurityListCmd(BaseCommand[list[SecurityInfo]]):
 
         for _ in range(num):
             raw = slice_bytes(body, pos, _RECORD_SIZE, "security_list record")
-            (
-                code_bytes,
-                volunit,
-                name_bytes,
-                _unknown1,  # 4字节，排序/分组字段（非用户可见数据）
-                decimal_point,
-                pre_close_raw,
-                _unknown2,  # 4字节，私有时间戳（非用户可见数据）
-            ) = struct.unpack("<6sH8s4sBI4s", raw)
+            (code_bytes, volunit, name_bytes, _unknown1,  # 4字节，排序/分组字段（非用户可见数据）
+                decimal_point, pre_close_raw, _unknown2,  # 4字节，私有时间戳（非用户可见数据）) = struct.unpack("<6sH8s4sBI4s", raw)
 
             code = code_bytes.decode("utf-8", errors="replace").rstrip("\x00")
             # Bug #2 修复：errors='replace' 避免截断 GBK 多字节序列时崩溃
@@ -1386,17 +1074,7 @@ class GetSecurityListCmd(BaseCommand[list[SecurityInfo]]):
             # pre_close_raw 与协议里的成交量/股本字段一样，使用通达信自定义浮点编码。
             pre_close = _decode_volume(pre_close_raw)
 
-            results.append(
-                SecurityInfo(
-                    market=self.market,
-                    code=code,
-                    name=name,
-                    volunit=volunit,
-                    decimal_point=decimal_point,
-                    pre_close=pre_close,
-                    _raw=raw,
-                )
-            )
+            results.append(SecurityInfo(market=self.market, code=code, name=name, volunit=volunit, decimal_point=decimal_point, pre_close=pre_close, _raw=raw))
             pos += _RECORD_SIZE
 
         return results
@@ -1421,7 +1099,7 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
         stocks: [(market, code), ...] 列表
     """
 
-    def __init__(self, stocks: list[tuple[Market, str]]) -> None:
+    def __init__(self, stocks: list[tuple[Market, str]]):
         if not stocks:
             raise ValueError("stocks 不能为空")
         if len(stocks) > 80:
@@ -1431,17 +1109,7 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
     def build_request(self) -> bytes:
         n = len(self.stocks)
         payload_len = n * 7 + 12
-        header = struct.pack(
-            "<HIHHIIHH",
-            0x010C,
-            0x02006320,
-            payload_len,
-            payload_len,
-            0x0005053E,
-            0,
-            0,
-            n,
-        )
+        header = struct.pack("<HIHHIIHH", 0x010C, 0x02006320, payload_len, payload_len, 0x0005053E, 0, 0, n)
         body = bytearray(header)
         for market, code in self.stocks:
             body.extend(struct.pack("<B6s", int(market), code.encode("utf-8")))
@@ -1459,12 +1127,7 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
         for _ in range(num):
             record_start = pos
 
-            market_b, code_b, active1 = unpack_from(
-                "<B6sH",
-                body,
-                pos,
-                "security_quotes record header",
-            )
+            market_b, code_b, active1 = unpack_from("<B6sH", body, pos, "security_quotes record header")
             pos += 9
 
             price_raw, pos = get_price(body, pos)
@@ -1523,12 +1186,7 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
             unknown_6, pos = get_price(body, pos)
             unknown_7, pos = get_price(body, pos)
             unknown_8, pos = get_price(body, pos)
-            rise_speed_raw, active2 = unpack_from(
-                "<hH",
-                body,
-                pos,
-                "security_quotes tail",
-            )
+            rise_speed_raw, active2 = unpack_from("<hH", body, pos, "security_quotes tail")
             pos += 4
 
             p = price_raw / 100.0
@@ -1537,64 +1195,14 @@ class GetSecurityQuotesCmd(BaseCommand[list[SecurityQuote]]):
             except ValueError as e:
                 raise TdxDecodeError(f"security_quotes 非法 market 值: {market_b}") from e
 
-            results.append(
-                SecurityQuote(
-                    market=market,
-                    code=code_b.decode("utf-8").rstrip("\x00"),
-                    price=p,
-                    pre_close=(price_raw + last_close_diff) / 100.0,
-                    open=(price_raw + open_diff) / 100.0,
-                    high=(price_raw + high_diff) / 100.0,
-                    low=(price_raw + low_diff) / 100.0,
-                    vol=float(vol),
-                    cur_vol=float(cur_vol),
-                    amount=amount,
-                    s_vol=float(s_vol),
-                    b_vol=float(b_vol),
-                    active1=active1,
-                    active2=active2,
-                    bid1=(price_raw + bid1_d) / 100.0,
-                    bid_vol1=float(bv1),
-                    bid2=(price_raw + bid2_d) / 100.0,
-                    bid_vol2=float(bv2),
-                    bid3=(price_raw + bid3_d) / 100.0,
-                    bid_vol3=float(bv3),
-                    bid4=(price_raw + bid4_d) / 100.0,
-                    bid_vol4=float(bv4),
-                    bid5=(price_raw + bid5_d) / 100.0,
-                    bid_vol5=float(bv5),
-                    ask1=(price_raw + ask1_d) / 100.0,
-                    ask_vol1=float(av1),
-                    ask2=(price_raw + ask2_d) / 100.0,
-                    ask_vol2=float(av2),
-                    ask3=(price_raw + ask3_d) / 100.0,
-                    ask_vol3=float(av3),
-                    ask4=(price_raw + ask4_d) / 100.0,
-                    ask_vol4=float(av4),
-                    ask5=(price_raw + ask5_d) / 100.0,
-                    ask_vol5=float(av5),
-                    rise_speed=rise_speed_raw / 100.0,
-                    limit_up=None,
-                    limit_down=None,
-                    unknown_2=unknown_2,
-                    unknown_3=unknown_3,
-                    unknown_5=unknown_5,
-                    unknown_6=unknown_6,
-                    unknown_7=unknown_7,
-                    unknown_8=unknown_8,
-                    server_time=_format_server_time(unknown_0),
-                    trading_status=trading_status,
-                    open_amount=unknown_3 * 100.0,
-                    _raw=body[record_start:pos],
-                )
-            )
+            results.append(SecurityQuote(market=market, code=code_b.decode("utf-8").rstrip("\x00"), price=p, pre_close=(price_raw + last_close_diff) / 100.0, open=(price_raw + open_diff) / 100.0, high=(price_raw + high_diff) / 100.0, low=(price_raw + low_diff) / 100.0, vol=float(vol), cur_vol=float(cur_vol), amount=amount, s_vol=float(s_vol), b_vol=float(b_vol), active1=active1, active2=active2, bid1=(price_raw + bid1_d) / 100.0, bid_vol1=float(bv1), bid2=(price_raw + bid2_d) / 100.0, bid_vol2=float(bv2), bid3=(price_raw + bid3_d) / 100.0, bid_vol3=float(bv3), bid4=(price_raw + bid4_d) / 100.0, bid_vol4=float(bv4), bid5=(price_raw + bid5_d) / 100.0, bid_vol5=float(bv5), ask1=(price_raw + ask1_d) / 100.0, ask_vol1=float(av1), ask2=(price_raw + ask2_d) / 100.0, ask_vol2=float(av2), ask3=(price_raw + ask3_d) / 100.0, ask_vol3=float(av3), ask4=(price_raw + ask4_d) / 100.0, ask_vol4=float(av4), ask5=(price_raw + ask5_d) / 100.0, ask_vol5=float(av5), rise_speed=rise_speed_raw / 100.0, limit_up=None, limit_down=None, unknown_2=unknown_2, unknown_3=unknown_3, unknown_5=unknown_5, unknown_6=unknown_6, unknown_7=unknown_7, unknown_8=unknown_8, server_time=_format_server_time(unknown_0), trading_status=trading_status, open_amount=unknown_3 * 100.0, _raw=body[record_start:pos]))
 
         return results
 
 class GetTransactionDataCmd(BaseCommand[list[TransactionRecord]]):
     """获取当日逐笔成交（分页，每次最多 800 条）。"""
 
-    def __init__(self, market: Market, code: str, start: int, count: int = 800) -> None:
+    def __init__(self, market: Market, code: str, start: int, count: int = 800):
         self.market = market
         self.code = code.encode("utf-8")
         self.start = start
@@ -1611,7 +1219,7 @@ class GetTransactionDataCmd(BaseCommand[list[TransactionRecord]]):
 class GetHistoryTransactionDataCmd(BaseCommand[list[TransactionRecord]]):
     """获取历史某日逐笔成交（date 格式 YYYYMMDD，分页）。"""
 
-    def __init__(self, market: Market, code: str, date: int, start: int, count: int = 800) -> None:
+    def __init__(self, market: Market, code: str, date: int, start: int, count: int = 800):
         self.market = market
         self.code = code.encode("utf-8")
         self.date = date
@@ -1621,9 +1229,7 @@ class GetHistoryTransactionDataCmd(BaseCommand[list[TransactionRecord]]):
     def build_request(self) -> bytes:
         # 历史逐笔：header + pack("<IH6sHH", date, market, code, start, count)
         header = bytes.fromhex("0c013001000112001200b50f".replace(" ", ""))
-        return header + struct.pack(
-            "<IH6sHH", self.date, int(self.market), self.code, self.start, self.count
-        )
+        return header + struct.pack("<IH6sHH", self.date, int(self.market), self.code, self.start, self.count)
 
     def parse_response(self, body: bytes) -> list[TransactionRecord]:
         # 历史逐笔：num(2) + 4字节填充；无"成交笔数"字段
@@ -1646,17 +1252,7 @@ def _parse_transaction_body(body: bytes) -> list[TransactionRecord]:
         buyorsell, pos = get_price(body, pos)
         unknown_last, pos = get_price(body, pos)  # Bug #4 修复：不再丢弃
         last_price += price_diff
-        records.append(
-            TransactionRecord(
-                hour=hour,
-                minute=minute,
-                price=last_price / 100.0,
-                vol=vol,
-                buyorsell=buyorsell,
-                unknown_last=unknown_last,
-                _raw=body[record_start:pos],
-            )
-        )
+        records.append(TransactionRecord(hour=hour, minute=minute, price=last_price / 100.0, vol=vol, buyorsell=buyorsell, unknown_last=unknown_last, _raw=body[record_start:pos]))
 
     return records
 
@@ -1676,17 +1272,7 @@ def _parse_history_transaction_body(body: bytes) -> list[TransactionRecord]:
         buyorsell, pos = get_price(body, pos)  # 历史无 num_orders
         unknown_last, pos = get_price(body, pos)
         last_price += price_diff
-        records.append(
-            TransactionRecord(
-                hour=hour,
-                minute=minute,
-                price=last_price / 100.0,
-                vol=vol,
-                buyorsell=buyorsell,
-                unknown_last=unknown_last,
-                _raw=body[record_start:pos],
-            )
-        )
+        records.append(TransactionRecord(hour=hour, minute=minute, price=last_price / 100.0, vol=vol, buyorsell=buyorsell, unknown_last=unknown_last, _raw=body[record_start:pos]))
 
     return records
 
@@ -1694,7 +1280,7 @@ def _parse_history_transaction_body(body: bytes) -> list[TransactionRecord]:
 class GetXdxrInfoCmd(BaseCommand[list[XdxrRecord]]):
     """获取除权除息历史记录。"""
 
-    def __init__(self, market: Market, code: str) -> None:
+    def __init__(self, market: Market, code: str):
         self.market = market
         self.code = code.encode("utf-8")
 
@@ -1732,16 +1318,7 @@ class GetXdxrInfoCmd(BaseCommand[list[XdxrRecord]]):
             except ValueError as e:
                 raise TdxDecodeError(f"xdxr_info 非法 market 值: {market_b}") from e
 
-            rec = XdxrRecord(
-                market=market,
-                code=code_b.decode("utf-8").rstrip("\x00"),
-                year=year,
-                month=month,
-                day=day,
-                category=category,
-                name=XDXR_CATEGORY_NAMES.get(category, str(category)),
-                _raw=body[record_start:pos],
-            )
+            rec = XdxrRecord(market=market, code=code_b.decode("utf-8").rstrip("\x00"), year=year, month=month, day=day, category=category, name=XDXR_CATEGORY_NAMES.get(category, str(category)), _raw=body[record_start:pos])
 
             if category == 1:
                 fenhong, peigujia, songzhuangu, peigu = struct.unpack("<ffff", chunk)

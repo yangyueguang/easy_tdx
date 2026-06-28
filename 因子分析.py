@@ -27,11 +27,7 @@ _ALL_DATES: object = object()
 class FactorEngine:
     """批量因子计算引擎。"""
 
-    def compute_single(
-        self,
-        df: pd.DataFrame,
-        factors: list[str],
-    ) -> pd.DataFrame:
+    def compute_single(self, df: pd.DataFrame, factors: list[str]) -> pd.DataFrame:
         """单股票多因子计算。"""
         if not factors:
             return df.copy()
@@ -43,12 +39,7 @@ class FactorEngine:
 
         return result
 
-    def compute_cross_section(
-        self,
-        data: dict[str, pd.DataFrame],
-        factors: list[str],
-        date: int = _ALL_DATES,  # type: ignore[assignment]
-    ) -> pd.DataFrame:
+    def compute_cross_section(self, data: dict[str, pd.DataFrame], factors: list[str], date: int = _ALL_DATES,  # type: ignore[assignment]) -> pd.DataFrame:
         """多股票截面因子计算。
 
         Args:
@@ -89,11 +80,7 @@ class FactorEngine:
 
         return combined
 
-    def compute_forward_returns(
-        self,
-        data: dict[str, pd.DataFrame],
-        period: int = 5,
-    ) -> pd.DataFrame:
+    def compute_forward_returns(self, data: dict[str, pd.DataFrame], period: int = 5) -> pd.DataFrame:
         """计算远期收益率。"""
         if not data:
             return pd.DataFrame()
@@ -111,13 +98,8 @@ class FactorEngine:
 
             dates = df["datetime"].apply(_datetime_to_int)
 
-            sub = pd.DataFrame(
-                {
-                    "date": dates,
-                    "code": code,
-                    col_name: forward,
-                }
-            )
+            sub = pd.DataFrame({
+                    "date": dates, "code": code, col_name: forward, })
             all_frames.append(sub)
 
         if not all_frames:
@@ -158,22 +140,11 @@ class FactorReport:
 class FactorAnalyzer:
     """因子有效性分析引擎。"""
 
-    def __init__(
-        self,
-        factor_data: pd.DataFrame,
-        return_data: pd.DataFrame,
-        factor_col: str = "momentum_20d",
-        return_col: str = "forward_5d",
-        n_quantiles: int = 5,
-    ) -> None:
+    def __init__(self, factor_data: pd.DataFrame, return_data: pd.DataFrame, factor_col: str = "momentum_20d", return_col: str = "forward_5d", n_quantiles: int = 5):
         self._factor_col = factor_col
         self._return_col = return_col
         self._n_quantiles = n_quantiles
-        self._merged = factor_data.merge(
-            return_data[["date", "code", return_col]],
-            on=["date", "code"],
-            how="inner",
-        )
+        self._merged = factor_data.merge(return_data[["date", "code", return_col]], on=["date", "code"], how="inner")
 
     def compute_ic(self, method: str = "spearman") -> pd.Series:
         """逐截面计算 Rank IC。"""
@@ -189,9 +160,7 @@ class FactorAnalyzer:
                 try:
                     import scipy  # noqa: F401  # pandas spearman lazy import
                 except ImportError as e:
-                    raise ImportError(
-                        "Rank IC (spearman) 需要 scipy，请执行 `pip install easy-tdx[science]`"
-                    ) from e
+                    raise ImportError("Rank IC (spearman) 需要 scipy，请执行 `pip install easy-tdx[science]`") from e
                 corr = valid[self._factor_col].corr(valid[self._return_col], method="spearman")
             else:
                 corr = valid[self._factor_col].corr(valid[self._return_col], method="pearson")
@@ -210,12 +179,7 @@ class FactorAnalyzer:
                 rows.append([np.nan] * self._n_quantiles)
                 continue
             valid = valid.copy()
-            valid["_q"] = pd.qcut(
-                valid[self._factor_col],
-                self._n_quantiles,
-                labels=False,
-                duplicates="drop",
-            )
+            valid["_q"] = pd.qcut(valid[self._factor_col], self._n_quantiles, labels=False, duplicates="drop")
             means = valid.groupby("_q")[self._return_col].mean()
             rows.append([float(means.get(q, np.nan)) for q in range(self._n_quantiles)])
         return pd.DataFrame(rows, index=dates, columns=q_names)
@@ -272,26 +236,10 @@ class FactorAnalyzer:
         turnover = self.compute_turnover()
         autocorr = float(ic_series.autocorr(lag=1)) if len(ic_series) > 1 else 0.0
 
-        return FactorReport(
-            name=self._factor_col,
-            ic_mean=ic_mean,
-            ic_std=ic_std,
-            ir=ir,
-            ic_positive_rate=ic_positive_rate,
-            quantile_returns=quantile_returns,
-            top_minus_bottom=top_minus_bottom,
-            turnover_rate=turnover,
-            autocorr=autocorr if not np.isnan(autocorr) else 0.0,
-            ic_series=ic_series,
-        )
+        return FactorReport(name=self._factor_col, ic_mean=ic_mean, ic_std=ic_std, ir=ir, ic_positive_rate=ic_positive_rate, quantile_returns=quantile_returns, top_minus_bottom=top_minus_bottom, turnover_rate=turnover, autocorr=autocorr if not np.isnan(autocorr) else 0.0, ic_series=ic_series)
 
 
-def winsorize(
-    factor_data: pd.DataFrame,
-    columns: str,
-    method: str = "mad",
-    threshold: float = 3.0,
-) -> pd.DataFrame:
+def winsorize(factor_data: pd.DataFrame, columns: str, method: str = "mad", threshold: float = 3.0) -> pd.DataFrame:
     """截面去极值。"""
     if isinstance(columns, str):
         columns = [columns]
@@ -330,11 +278,7 @@ def winsorize(
     return result
 
 
-def zscore(
-    factor_data: pd.DataFrame,
-    columns: str,
-    cross_section: bool = True,
-) -> pd.DataFrame:
+def zscore(factor_data: pd.DataFrame, columns: str, cross_section: bool = True) -> pd.DataFrame:
     """标准化。"""
     if isinstance(columns, str):
         columns = [columns]
@@ -358,10 +302,7 @@ def zscore(
     return result
 
 
-def rank_normalize(
-    factor_data: pd.DataFrame,
-    columns: str,
-) -> pd.DataFrame:
+def rank_normalize(factor_data: pd.DataFrame, columns: str) -> pd.DataFrame:
     """排名归一化 [0, 1]。"""
     if isinstance(columns, str):
         columns = [columns]
@@ -382,11 +323,7 @@ def rank_normalize(
     return result
 
 
-def fill_missing(
-    factor_data: pd.DataFrame,
-    columns: str,
-    method: str = "cross_mean",
-) -> pd.DataFrame:
+def fill_missing(factor_data: pd.DataFrame, columns: str, method: str = "cross_mean") -> pd.DataFrame:
     """缺失值填充。"""
     if isinstance(columns, str):
         columns = [columns]
@@ -415,11 +352,7 @@ def fill_missing(
     return result
 
 
-def orthogonalize(
-    factor_data: pd.DataFrame,
-    target: str,
-    by: str,
-) -> pd.DataFrame:
+def orthogonalize(factor_data: pd.DataFrame, target: str, by: str) -> pd.DataFrame:
     """因子正交化。"""
     if isinstance(by, str):
         by = [by]
@@ -451,11 +384,7 @@ def orthogonalize(
     return result
 
 
-def preprocess(
-    factor_data: pd.DataFrame,
-    columns: list[str],
-    steps: list[str] = None,
-) -> pd.DataFrame:
+def preprocess(factor_data: pd.DataFrame, columns: list[str], steps: list[str] = None) -> pd.DataFrame:
     """一键预处理管道。"""
     if steps is None:
         steps = ["winsorize", "zscore", "fill_missing"]
