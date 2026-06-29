@@ -3136,10 +3136,7 @@ class SymbolQuotesCmd(BaseCommand):
         if not stocks:
             raise ValueError("stocks 不能为空")
         self._stocks = stocks
-        # 默认不请求任何字段时使用 COMMON 需要导入 PresetField，
-        # 这里延迟导入避免循环。
-        if fields is None:
-            fields = PresetField.COMMON
+        fields = fields or PresetField.COMMON
         self._fields = fields
         self._bitmap = bytes(build_bitmap(fields))
 
