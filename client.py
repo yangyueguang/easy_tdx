@@ -562,63 +562,6 @@ class XdxrRecord:
 
 
 @dataclass
-class FinanceInfo:
-    """最新财务数据（单只股票）"""
-
-    market: Market
-    code: str
-
-    # 股本（万股）
-    liutong_guben: float  # 流通股本
-    zong_guben: float  # 总股本
-    guojia_gu: float  # 国家股
-    faqiren_faren_gu: float  # 发起人法人股
-    faren_gu: float  # 法人股
-    b_gu: float  # B股
-    h_gu: float  # H股
-    zhigong_gu: float  # 职工股
-
-    # 基本信息
-    province: int  # 所属省份代码
-    industry: int  # 所属行业代码
-    updated_date: int  # 财务更新日期 YYYYMMDD
-    ipo_date: int  # 上市日期 YYYYMMDD
-    gudong_renshu: float  # 股东人数
-
-    # 资产负债（元）
-    zong_zichan: float  # 总资产
-    liudong_zichan: float  # 流动资产
-    guding_zichan: float  # 固定资产
-    wuxing_zichan: float  # 无形资产
-    liudong_fuzhai: float  # 流动负债
-    changqi_fuzhai: float  # 长期负债
-    ziben_gongjijin: float  # 资本公积金
-    jing_zichan: float  # 净资产
-
-    # 利润（元）
-    zhuying_shouru: float  # 主营收入
-    zhuying_lirun: float  # 主营利润
-    yingshou_zhangkuan: float  # 应收账款
-    yingye_lirun: float  # 营业利润
-    touzi_shouyu: float  # 投资收益
-    jingying_xianjinliu: float  # 经营现金流
-    zong_xianjinliu: float  # 总现金流
-    cunhuo: float  # 存货
-    lirun_zonghe: float  # 利润总额
-    shuihou_lirun: float  # 税后利润
-    jing_lirun: float  # 净利润
-    weifen_lirun: float  # 未分配利润
-
-    # 每股指标
-    meigujing_zichan: float  # 每股净资产（原 baoliu1）
-
-    # 协议保留字段（含义未完全确认）
-    reserve2: float = field(default=0.0, repr=False)  # 原 baoliu2
-
-    _raw: bytes = field(default=b"", repr=False, compare=False)
-
-
-@dataclass
 class FinancialFileInfo:
     """财报 zip 文件索引条目（来自 tdxfin/gpcw.txt）。"""
     filename: str  # "gpcw20260331.zip"
@@ -707,22 +650,6 @@ class SecurityQuote:
     open_amount: float = field(default=0.0, repr=False)  # 集合竞价成交金额（元），个股有效
 
     # 原始字节（该股票记录切片）
-    _raw: bytes = field(default=b"", repr=False, compare=False)
-
-
-@dataclass
-class SecurityInfo:
-    """证券列表条目（来自 get_security_list）"""
-    market: Market
-    code: str
-    name: str  # 股票名称（GBK 解码，截断字节用 replacement char 替代）
-    volunit: int  # 成交量单位（手 = volunit 股）
-    decimal_point: int  # 价格小数位数
-    pre_close: float  # 昨收价（通达信自定义浮点解码）
-
-    industry_tdx: str = ""  # 通达信行业代码 (如 T1001)
-    industry_sw: str = ""  # 申万行业代码 (如 X500102)
-
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
 
@@ -1213,7 +1140,6 @@ class ExTransactionRecord:
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
 
-
 def _recv_exact_sock(sock: socket.socket, n: int) -> bytes:
     buf = bytearray()
     while len(buf) < n:
@@ -1229,16 +1155,13 @@ def _parse_minute_body(body: bytes, skip: int = 4) -> list[MinuteBar]:
     pos = skip  # 今日分时 skip=4，历史分时 skip=6
     last_price = 0
     bars: list[MinuteBar] = []
-
     for _ in range(num):
         record_start = pos
         price_diff, pos = get_price(body, pos)
-        unknown_1, pos = get_price(body, pos)  # pytdx 原丢弃，保留
+        unknown_1, pos = get_price(body, pos)
         vol, pos = get_price(body, pos)
-
         last_price += price_diff
         bars.append(MinuteBar(price=last_price / 100.0, vol=vol, _unknown_1=unknown_1, _raw=body[record_start:pos]))
-
     return bars
 
 
@@ -1280,7 +1203,7 @@ def _decode_share_count(raw: int) -> float:
     """股本数量解码（通达信自定义4字节浮点 → 万股）。
 
     xdxr_info 的股本字段与成交量字段使用相同的自定义浮点编码，
-    解码结果单位为万股，与 FinanceInfo.zong_guben / 10000 一致。
+    解码结果单位为万股，与.zong_guben / 10000 一致。
     """
     return _decode_volume(raw)
 
@@ -1349,26 +1272,6 @@ def _merge_txn_datetime(df: pd.DataFrame, date_int: int) -> pd.DataFrame:
     offsets = pd.to_timedelta(df["hour"] * 3600 + df["minute"] * 60, unit="s")
     df.insert(0, "datetime", base + offsets)
     df.drop(columns=["hour", "minute"], inplace=True)
-    return df
-
-
-def _add_minute_datetime(df: pd.DataFrame, date_int: int) -> pd.DataFrame:
-    """为分时 DataFrame 添加 datetime 列（从 bar 索引计算时间）。
-
-    A 股分时 240 条：0-119 = 9:30~11:29（上午），120-239 = 13:00~14:59（下午）。
-    """
-    if df.empty:
-        return df
-    year = date_int // 10000
-    month = (date_int // 100) % 100
-    day = date_int % 100
-    base = pd.Timestamp(year=year, month=month, day=day)
-    n = len(df)
-    morning = list(range(9 * 60 + 30, 9 * 60 + 30 + 120))
-    afternoon = list(range(13 * 60, 13 * 60 + 120))
-    all_minutes = (morning + afternoon)[:n]
-    offsets = pd.to_timedelta(all_minutes, unit="m")
-    df.insert(0, "datetime", base + offsets)
     return df
 
 
@@ -1696,7 +1599,7 @@ def get_no_limit_window_days(market: Market, code: str, name: str) -> int:
     return 0
 
 
-def compute_price_limits(market: Market, code: str, name: str, pre_close: float, finance_info: FinanceInfo = None, listed_days: int = None) -> tuple[float, float]:
+def compute_price_limits(market: Market, code: str, name: str, pre_close: float, listed_days: int = None) -> tuple[float, float]:
     """根据板块规则计算涨跌停价。
 
     Returns:
@@ -1728,9 +1631,6 @@ def compute_price_limits(market: Market, code: str, name: str, pre_close: float,
     # 4. 北交所 (43, 83, 87, 92)
     elif code.startswith(("43", "83", "87", "92")):
         limit_pct = 0.30
-
-    # `listed_days` 是更可靠的交易日维度输入；finance_info 仍保留给上层调用方扩展。
-    _ = finance_info
 
     def _round_price(p: float) -> float:
         return round(p + 0.00001, 2)
@@ -1816,102 +1716,6 @@ class BaseCommand(ABC):
         ...
 
 
-
-
-class GetCompanyInfoContentCmd(BaseCommand):
-    """按文件名、偏移、长度读取公司信息文本（GBK 编码）。"""
-
-    def __init__(self, market: Market, code: str, filename: str, offset: int, length: int):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.filename = filename.encode("gbk")
-        self.offset = offset
-        self.length = length
-
-    def build_request(self) -> bytes:
-        fname_padded = (self.filename + b"\x00" * 80)[:80]
-        header = bytes.fromhex("0c07109c0001680068 00d002".replace(" ", ""))
-        return header + struct.pack("<H6sH80sIII", int(self.market), self.code, 0, fname_padded, self.offset, self.length, 0)
-
-    def parse_response(self, body: bytes) -> str:
-        # 前12字节：10字节未知 + 2字节长度
-        if len(body) < 12:
-            raise Exception("company_info_content body 过短")
-        _, length = unpack_from("<10sH", body, 0, "company_info_content header")
-        content = slice_bytes(body, 12, length, "company_info_content body")
-        return content.decode("gbk", errors="replace")
-
-
-class GetFinanceInfoCmd(BaseCommand):
-    """获取单只股票最新财务数据。"""
-
-    def __init__(self, market: Market, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c1f18760001 0b000b001000 0100".replace(" ", ""))
-        return header + struct.pack("<B6s", int(self.market), self.code)
-
-    def parse_response(self, body: bytes) -> FinanceInfo:
-        pos = 2  # 跳过前2字节（记录数）
-        market_b, code_b = unpack_from("<B6s", body, pos, "finance_info header")
-        pos += 7
-        _FIN_FMT = "<fHHII" + "f" * 30
-        _FIN_SIZE = struct.calcsize(_FIN_FMT)
-        fields = struct.unpack(_FIN_FMT, slice_bytes(body, pos, _FIN_SIZE, "finance_info body"))
-        (liutong_guben, province, industry, updated_date, ipo_date, zong_guben, guojia_gu, faqiren_faren_gu, faren_gu, b_gu, h_gu, zhigong_gu, zong_zichan, liudong_zichan, guding_zichan, wuxing_zichan, gudong_renshu, liudong_fuzhai, changqi_fuzhai, ziben_gongjijin, jing_zichan, zhuying_shouru, zhuying_lirun, yingshou_zhangkuan, yingye_lirun, touzi_shouyu, jingying_xianjinliu, zong_xianjinliu, cunhuo, lirun_zonghe, shuihou_lirun, jing_lirun, weifen_lirun, meigujing_zichan, reserve2) = fields
-
-        _SCALE = 10000.0  # 财务数据单位：万元/万股
-        try:
-            market = Market(market_b)
-        except ValueError as e:
-            raise Exception(f"finance_info 非法 market 值: {market_b}") from e
-
-        return FinanceInfo(market=market, code=code_b.decode("utf-8").rstrip("\x00"), liutong_guben=liutong_guben * _SCALE, zong_guben=zong_guben * _SCALE, guojia_gu=guojia_gu * _SCALE, faqiren_faren_gu=faqiren_faren_gu * _SCALE, faren_gu=faren_gu * _SCALE, b_gu=b_gu * _SCALE, h_gu=h_gu * _SCALE, zhigong_gu=zhigong_gu * _SCALE, province=province, industry=industry, updated_date=updated_date, ipo_date=ipo_date, gudong_renshu=gudong_renshu, zong_zichan=zong_zichan * _SCALE, liudong_zichan=liudong_zichan * _SCALE, guding_zichan=guding_zichan * _SCALE, wuxing_zichan=wuxing_zichan * _SCALE, liudong_fuzhai=liudong_fuzhai * _SCALE, changqi_fuzhai=changqi_fuzhai * _SCALE, ziben_gongjijin=ziben_gongjijin * _SCALE, jing_zichan=jing_zichan * _SCALE, zhuying_shouru=zhuying_shouru * _SCALE, zhuying_lirun=zhuying_lirun * _SCALE, yingshou_zhangkuan=yingshou_zhangkuan * _SCALE, yingye_lirun=yingye_lirun * _SCALE, touzi_shouyu=touzi_shouyu * _SCALE, jingying_xianjinliu=jingying_xianjinliu * _SCALE, zong_xianjinliu=zong_xianjinliu * _SCALE, cunhuo=cunhuo * _SCALE, lirun_zonghe=lirun_zonghe * _SCALE, shuihou_lirun=shuihou_lirun * _SCALE, jing_lirun=jing_lirun * _SCALE, weifen_lirun=weifen_lirun * _SCALE, meigujing_zichan=meigujing_zichan, reserve2=reserve2, _raw=body[pos : pos + _FIN_SIZE])
-
-
-class GetHistoryFundFlowCmd(BaseCommand):
-    """获取历史日线资金流向序列。"""
-
-    def __init__(self, market: Market, code: str, start: int, count: int):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        # Header (12 bytes) + Payload (28 bytes) = 40 bytes
-        return struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(self.market), self.code, 22, 1, self.start, self.count, 0, 0, 0)
-
-    def parse_response(self, body: bytes) -> list[HistoricalFundFlow]:
-        # 响应格式：9字节头 + 2字节数量 + 每条记录 36 字节
-        if len(body) < 11:
-            return []
-
-        (num,) = struct.unpack("<H", body[9:11])
-        pos = 11
-        results = []
-
-        for _ in range(num):
-            if len(body) < pos + 36:
-                break
-
-            # 记录格式：4字节日期 + 8个4字节自定义浮点金额
-            # [0]日期, [1..4]流入(超/大/中/小), [5..8]流出(超/大/中/小)
-            raw_data = struct.unpack("<IIIIIIIII", body[pos : pos + 36])
-
-            raw_date = raw_data[0]
-            year = raw_date // 10000
-            month = (raw_date // 100) % 100
-            day = raw_date % 100
-
-            results.append(HistoricalFundFlow(year=year, month=month, day=day, super_in=_decode_volume(raw_data[1]), large_in=_decode_volume(raw_data[2]), medium_in=_decode_volume(raw_data[3]), small_in=_decode_volume(raw_data[4]), super_out=_decode_volume(raw_data[5]), large_out=_decode_volume(raw_data[6]), medium_out=_decode_volume(raw_data[7]), small_out=_decode_volume(raw_data[8])))
-            pos += 36
-
-        return results
-
-
 class GetMinuteTimeDataCmd(BaseCommand):
     """获取今日分时数据（全天 240 条）。"""
 
@@ -1925,24 +1729,6 @@ class GetMinuteTimeDataCmd(BaseCommand):
 
     def parse_response(self, body: bytes) -> list[MinuteBar]:
         return _parse_minute_body(body, skip=4)
-
-
-class GetHistoryMinuteTimeDataCmd(BaseCommand):
-    """获取历史某日分时数据（date 格式 YYYYMMDD）。"""
-
-    def __init__(self, market: Market, code: str, date: int):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.date = date
-
-    def build_request(self) -> bytes:
-        # 历史分时：header + pack("<IB6s", date, market, code)
-        header = bytes.fromhex("0c013000010 10d000d00b40f".replace(" ", ""))
-        return header + struct.pack("<IB6s", self.date, int(self.market), self.code)
-
-    def parse_response(self, body: bytes) -> list[MinuteBar]:
-        # 历史分时：pytdx 中 pos 跳过 6 字节（2 num + 4 未知）
-        return _parse_minute_body(body, skip=6)
 
 
 class GetReportFileCmd(BaseCommand):
@@ -2065,41 +1851,6 @@ class GetSecurityCountCmd(BaseCommand):
     def parse_response(self, body: bytes) -> int:
         (count,) = unpack_from("<H", body, 0, "security_count")
         return int(count)
-
-
-class GetSecurityListCmd(BaseCommand):
-    """获取指定市场从 start 开始的证券列表。"""
-
-    def __init__(self, market: Market, start: int):
-        self.market = market
-        self.start = start
-
-    def build_request(self) -> bytes:
-        # Header (12 bytes) + Payload (6 bytes) = 18 bytes
-        # Payload: Market(H), Start(H), Unknown(H)=0
-        header = bytes.fromhex("0c0118640101060006005004".replace(" ", ""))
-        return header + struct.pack("<HHH", int(self.market), self.start, 0)
-
-    def parse_response(self, body: bytes) -> list[SecurityInfo]:
-        (num,) = unpack_from("<H", body, 0, "security_list header")
-        pos = 2
-        results: list[SecurityInfo] = []
-        _RECORD_SIZE = 29
-        for _ in range(num):
-            raw = slice_bytes(body, pos, _RECORD_SIZE, "security_list record")
-            (code_bytes, volunit, name_bytes, _unknown1, decimal_point, pre_close_raw, _unknown2,) = struct.unpack("<6sH8s4sBI4s", raw)
-
-            code = code_bytes.decode("utf-8", errors="replace").rstrip("\x00")
-            # Bug #2 修复：errors='replace' 避免截断 GBK 多字节序列时崩溃
-            name = name_bytes.decode("gbk", errors="replace").rstrip("\x00")
-
-            # pre_close_raw 与协议里的成交量/股本字段一样，使用通达信自定义浮点编码。
-            pre_close = _decode_volume(pre_close_raw)
-
-            results.append(SecurityInfo(market=self.market, code=code, name=name, volunit=volunit, decimal_point=decimal_point, pre_close=pre_close, _raw=raw))
-            pos += _RECORD_SIZE
-
-        return results
 
 
 class GetSecurityQuotesCmd(BaseCommand):
@@ -4356,45 +4107,6 @@ class MacClient(Client):
 
 
 class TdxClient(Client):
-    def get_security_count(self, market: Market) -> int:
-        """获取市场证券总数。"""
-        return self._execute(GetSecurityCountCmd(market))
-
-    def get_security_list(self, market: Market, start: int) -> pd.DataFrame:
-        """获取证券列表（每页约1000条，按 start 分页）。"""
-        return _to_df(self._execute(GetSecurityListCmd(market, start)))
-
-    def get_security_list_all(self) -> pd.DataFrame:
-        """获取沪深 A 股完整证券列表，并自动挂载行业信息  """
-        industry_map: dict[str, tuple[str, str]] = {}
-        try:
-            cfg_data = self.get_report_file("tdxhy.cfg")
-            if cfg_data:
-                industry_map = parse_tdxhy_cfg(cfg_data)
-                print("行业配置已加载，共 %d 条映射", len(industry_map))
-        except Exception:
-            print("无法获取 tdxhy.cfg，行业字段将为空")
-        all_stocks: list[SecurityInfo] = []
-        for market in [Market.SH, Market.SZ]:
-            count = self.get_security_count(market)
-            limit = (count)
-            total_pages = (limit + 999) // 1000
-            for page_idx, start in enumerate(range(0, limit, 1000)):
-                try:
-                    stocks = self._execute(GetSecurityListCmd(market, start))
-                except Exception:
-                    print("%s 第 %d/%d 页获取失败，跳过", market.name, page_idx + 1, total_pages)
-                    continue
-                print("%s 第 %d/%d 页: %d 条", market.name, page_idx + 1, total_pages, len(stocks))
-                for s in stocks:
-                    is_a_share = (market == Market.SH and s.code.startswith(("60", "68"))) or (market == Market.SZ and s.code.startswith(("00", "30")))
-                    if is_a_share:
-                        if s.code in industry_map:
-                            s.industry_tdx, s.industry_sw = industry_map[s.code]
-                        all_stocks.append(s)
-        print("沪深 A 股总数: %d", len(all_stocks))
-        return _to_df(all_stocks)
-
     def get_security_quotes(self, stocks: list[tuple[Market, str]]) -> pd.DataFrame:
         """批量获取实时五档行情（最多80只/次）。"""
         return _to_df(self._execute(GetSecurityQuotesCmd(stocks)))
@@ -4429,16 +4141,16 @@ class TdxClient(Client):
             {KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
         return _merge_bar_datetime(df, category in _DAILY_PLUS)
 
-    def get_minute_time_data(self, market: Market, code: str) -> pd.DataFrame:
-        """获取今日分时数据（240条，走历史分时接口）。"""
-        today = int(datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
-        bars = self._execute(GetHistoryMinuteTimeDataCmd(market, code, today))
-        return _add_minute_datetime(_to_df(bars), today)
-
-    def get_history_minute_time_data(self, market: Market, code: str, date: int) -> pd.DataFrame:
-        """获取历史某日分时数据（date: YYYYMMDD）。"""
-        bars = self._execute(GetHistoryMinuteTimeDataCmd(market, code, date))
-        return _add_minute_datetime(_to_df(bars), date)
+    def get_history_minute_time_data(self, market=Market.SH, code='600600', date=0) -> pd.DataFrame:
+        """获取历史某日分时数据（date: YYYYMMDD）0代表今天 """
+        date = date or int(datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d"))
+        pkg = bytes.fromhex("0c013000010 10d000d00b40f".replace(" ", "")) + struct.pack("<IB6s", date, int(market), code.encode("utf-8"))
+        bars = _parse_minute_body(self._execute(pkg), skip=6)
+        df = pd.DataFrame(bars)
+        base = pd.Timestamp(year=date // 10000, month=(date // 100) % 100, day=date % 100)
+        offsets = pd.to_timedelta((list(range(9 * 60 + 30, 9 * 60 + 30 + 120)) + list(range(13 * 60, 13 * 60 + 120)))[:len(df)], unit="m")
+        df["date"] = base + offsets
+        return df
 
     def get_transaction_data(self, market: Market, code: str, start: int, count: int = 800) -> pd.DataFrame:
         """获取当日逐笔成交（分页）。"""
@@ -4454,9 +4166,14 @@ class TdxClient(Client):
         """获取除权除息历史记录。"""
         return _to_df(self._execute(GetXdxrInfoCmd(market, code)))
 
-    def get_finance_info(self, market: Market, code: str) -> pd.DataFrame:
+    def get_finance_info(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取最新财务数据。"""
-        return _to_df(self._execute(GetFinanceInfoCmd(market, code)))
+        pkg = bytes.fromhex("0c1f18760001 0b000b001000 0100".replace(" ", "")) + struct.pack("<B6s", int(market), code.encode("utf-8"))
+        body = self._execute(pkg)
+        fmt = "<fHHII" + "f" * 30
+        keys = ['流通股本', '省份', '行业', '更新日期', '上市日期', '总股本', '国家股', '发起人法人股', '法人股', 'B股', 'H股', '职工股', '总资产', '流动资产', '固定资产', '无形资产', '股东人数', '流动负债', '长期负债', '资本公积金', '净资产', '主营收入',
+                '主营利润', '应收账款', '营业利润', '投资收益', '经营现金流', '总现金流', '存货', '利润总额', '税后利润', '净利润', '未分配利润', '每股净资产', '保留']
+        return dict(zip(keys, struct.unpack(fmt, slice_bytes(body, 9, struct.calcsize(fmt), "finance_info body"))))
 
     def get_company_info_category(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取公司信息文件目录。"""
@@ -4474,9 +4191,13 @@ class TdxClient(Client):
             results.append(dict(name=(name_b[:nul] if nul != -1 else name_b).decode("gbk", errors="replace"), filename=f'{code}.txt', start=start, length=length))
         return pd.DataFrame(results)
 
-    def get_company_info_content(self, market: Market, code: str, filename: str, offset: int, length: int) -> str:
+    def get_company_info_content(self, market=Market.SH, code='600600') -> str:
         """读取公司信息文本。"""
-        return self._execute(GetCompanyInfoContentCmd(market, code, filename, offset, length))
+        pkg = bytes.fromhex("0c07109c0001680068 00d002".replace(" ", "")) + struct.pack("<H6sH80sIII", int(market), code.encode("utf-8"), 0, (f'{code}.txt'.encode("gbk") + b"\x00" * 80)[:80], 0, 100000, 0)
+        body = self._execute(pkg)
+        _, length = unpack_from("<10sH", body, 0, "company_info_content header")
+        content = slice_bytes(body, 12, length, "company_info_content body")
+        return content.decode("gbk", errors="replace")
 
     def get_block_info(self) -> pd.DataFrame:
         """获取并解析板块文件（行业、概念、风格等   """
@@ -4519,101 +4240,6 @@ class TdxClient(Client):
                 results.append(dict(name=name, count=stock_count, codes=codes))
                 pos += 2813
         return pd.DataFrame(results)
-
-    def get_report_file(self, filename: str) -> bytes:
-        """从服务器拉取大文件（如 'base_info.zip'）。"""
-        full_data = bytearray()
-        pos = 0
-        chunk_size = 30000
-        while True:
-            chunk = self._execute(GetReportFileCmd(filename, pos, chunk_size))
-            if not chunk:
-                break
-            full_data.extend(chunk)
-            pos += len(chunk)
-            if len(chunk) < chunk_size:
-                break
-        return bytes(full_data)
-
-    @staticmethod
-    def _download_from_host(host: str, filename: str) -> bytes:
-        """从指定服务器创建临时连接并下载文件。"""
-        conn = TdxConnection(host)
-        try:
-            conn.connect()
-            full_data = bytearray()
-            pos = 0
-            chunk_size = 30000
-            while True:
-                chunk = conn.execute(GetReportFileCmd(filename, pos, chunk_size))
-                if not chunk:
-                    break
-                full_data.extend(chunk)
-                pos += len(chunk)
-                if len(chunk) < chunk_size:
-                    break
-            return bytes(full_data)
-        finally:
-            conn.close()
-
-    def get_financial_file_list(self, host: str = None) -> pd.DataFrame:
-        """获取可用的历史专业财报文件列表。
-
-        连接到计算服务器，下载 tdxfin/gpcw.txt 并解析。
-        """
-        if host is None:
-            host = config.get("calc_hosts")
-        data = self._download_from_host(host, "tdxfin/gpcw.txt")
-        raw_list = []
-        if data:
-            text = data.decode("utf-8", errors="replace").strip()
-            for line in text.split("\n"):
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split(",")
-                if len(parts) >= 3:
-                    raw_list.append((parts[0], parts[1], int(parts[2])))
-        return _to_df([FinancialFileInfo(filename=f, hash=h, filesize=s) for f, h, s in raw_list])
-
-    def get_financial_file(self, filename: str, host: str = None) -> bytes:
-        """从计算服务器下载财报 zip 文件。
-
-        Args:
-            filename: 如 'tdxfin/gpcw20260331.zip'
-        """
-        if host is None:
-            host = config.get("calc_hosts")
-        return self._download_from_host(host, filename)
-
-    def get_financial_records(self, filename: str, host: str = None) -> pd.DataFrame:
-        """下载财报 zip 并解析为每只股票的记录列表。
-
-        Args:
-            filename: 如 'tdxfin/gpcw20260331.zip'
-        """
-        if host is None:
-            host = config.get("calc_hosts")
-
-        zip_data = self.get_financial_file(filename, host)
-        if not zip_data:
-            return pd.DataFrame()
-
-        with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
-            dat_names = [n for n in zf.namelist() if n.endswith(".dat")]
-            if not dat_names:
-                return pd.DataFrame()
-            dat_data = zf.read(dat_names[0])
-
-        m = re.search(r"(\d{8})", filename)
-        report_date = int(m.group(1)) if m else 0
-
-        raw_records = parse_financial_dat(dat_data, report_date)
-        records: list[FinancialRecord] = []
-        for code, market_byte, rdate, fields in raw_records:
-            market = Market.SH if market_byte == 1 else Market.SZ
-            records.append(FinancialRecord(code=code, market=market, report_date=rdate, fields=fields))
-        return _to_df(records)
 
     def get_market_stat(self) -> pd.DataFrame:
         """获取 A 股全市场涨跌统计概况（基于 880005 行情统计）。
@@ -4677,25 +4303,13 @@ class TdxClient(Client):
         records = self._collect_transaction_records(lambda start, page_size: self._execute(GetTransactionDataCmd(market, code, start, page_size)), 2000)
         return _to_df(_classify_fund_flow(records))
 
-    def get_history_fund_flow(self, market: Market, code: str, start: int, count: int) -> pd.DataFrame:
-        """获取个股历史日线资金流向序列。
-
-        优先走 Category 22 直连接口；若服务器返回空列表，则自动回退为
-        "日 K 线取日期 + 历史逐笔成交重算资金流"的兼容实现。
-        """
-        try:
-            direct = self._execute(GetHistoryFundFlowCmd(market, code, start, count))
-        except Exception:
-            direct = []
-        if direct:
-            return _to_df(direct)
-
-        bars = self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, start, count))
+    def get_history_fund_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
+        """获取个股历史日线资金流向序列 """
+        bars = self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, 1000000))
         results: list[HistoricalFundFlow] = []
         for bar in bars:
             date = bar.year * 10000 + bar.month * 100 + bar.day
             records = self._collect_transaction_records(lambda page_start, page_size: self._execute(GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)), 800)
-
             flow = _classify_fund_flow(records)
             year = date // 10000
             month = (date // 100) % 100
@@ -4947,7 +4561,7 @@ class MacExClient(Client):
 if __name__ == '__main__':
     with TdxClient() as c:
         # 批量报价（最多 80 只/次）
-        us = c.get_company_info_category()
+        us = c.get_security_count()
         print('us')
         df = c.get_stock_quotes([(Market.SH, "600519"), (Market.SZ, "000858")])
         # 市场分类排序报价
