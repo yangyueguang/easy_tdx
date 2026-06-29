@@ -652,22 +652,6 @@ class SecurityQuote:
     # 原始字节（该股票记录切片）
     _raw: bytes = field(default=b"", repr=False, compare=False)
 
-
-@dataclass
-class MarketStat:
-    """全市场涨跌统计概况。"""
-    up_count: int  # 上涨家数
-    down_count: int  # 下跌家数
-    neutral_count: int  # 平盘家数
-    suspended_count: int  # 由 total-(up+down+neutral) 得到的残差项，近似表示停牌/未参与统计家数
-    total_count: int  # 总计（包含停牌）
-    total_amount: float  # 总成交额
-    total_volume: float  # 总成交量
-    total_market_cap: float  # 总市值（亿元），来自 880001 收盘价，÷100 得万亿
-    limit_up_count: int  # 涨停家数，来自 880006 close
-    limit_down_count: int  # 跌停家数，来自 880006 open
-
-
 @dataclass
 class FundFlow:
     """个股资金流向统计（基于 Tick 数据加权计算）。"""
@@ -1599,7 +1583,7 @@ def get_no_limit_window_days(market: Market, code: str, name: str) -> int:
     return 0
 
 
-def compute_price_limits(market: Market, code: str, name: str, pre_close: float, listed_days: int = None) -> tuple[float, float]:
+def compute_price_limits(market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
     """根据板块规则计算涨跌停价。
 
     Returns:
@@ -1619,8 +1603,6 @@ def compute_price_limits(market: Market, code: str, name: str, pre_close: float,
     if (market == Market.SH and code.startswith(("000", "880", "881", "882", "883", "884", "885", "999"))) or (market == Market.SZ and code.startswith(("395", "399"))) or "指数" in name or "板块" in name:
         return None, None
     no_limit_window_days = get_no_limit_window_days(market, code, name)
-    if listed_days is not None and 0 < listed_days <= no_limit_window_days:
-        return None, None
     limit_pct = 0.10  # 默认 10%
     # 2. ST / *ST 判断
     if "ST" in upper_name:
@@ -1714,422 +1696,6 @@ class BaseCommand(ABC):
     @abstractmethod
     def build_request(self) -> bytes:
         ...
-
-
-class GetMinuteTimeDataCmd(BaseCommand):
-    """获取今日分时数据（全天 240 条）。"""
-
-    def __init__(self, market: Market, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c1b08000101 0e000e001d05".replace(" ", ""))
-        return header + struct.pack("<H6sI", int(self.market), self.code, 0)
-
-    def parse_response(self, body: bytes) -> list[MinuteBar]:
-        return _parse_minute_body(body, skip=4)
-
-
-class GetReportFileCmd(BaseCommand):
-    def __init__(self, filename: str, start: int, length: int = 30000):
-        self.filename = filename.encode("ascii")
-        self.start = start
-        self.length = length
-
-    def build_request(self) -> bytes:
-        # 使用与 GetBlockInfo 相同的格式：0x06B9
-        header = bytes.fromhex("0c37186a00016e006e00b906")
-        payload = struct.pack("<II", self.start, self.length)
-        payload += (self.filename + b"\x00" * 100)[:100]
-        return header + payload
-
-    def parse_response(self, body: bytes) -> bytes:
-        if len(body) < 4:
-            return b""
-        return body[4:]
-
-
-class GetSecurityBarsCmd(BaseCommand):
-    """获取指定股票的 K 线数据。
-
-    Args:
-        market:   市场（SH/SZ）
-        code:     6位股票代码（字符串）
-        category: K线周期
-        start:    起始行（0 = 最新；分页时递增）
-        count:    返回条数（最多 800）
-    """
-
-    def __init__(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.category = category
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        # Header (12 bytes) + Payload (28 bytes) = 40 bytes
-        return struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(self.market), self.code, int(self.category), 1, self.start, self.count, 0, 0, 0)
-
-    def parse_response(self, body: bytes) -> list[SecurityBar]:
-        (ret_count,) = unpack_from("<H", body, 0, "security_bars header")
-        pos = 2
-        bars: list[SecurityBar] = []
-        pre_diff_base = 0
-        cat = int(self.category)
-
-        for _ in range(ret_count):
-            record_start = pos
-            year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
-
-            open_diff, pos = get_price(body, pos)
-            close_diff, pos = get_price(body, pos)
-            high_diff, pos = get_price(body, pos)
-            low_diff, pos = get_price(body, pos)
-
-            vol, pos = get_volume(body, pos)
-            amount, pos = get_volume(body, pos)
-
-            # 差分还原（与 pytdx 完全一致）
-            open_abs = open_diff + pre_diff_base
-            close_abs = open_abs + close_diff
-            high_abs = open_abs + high_diff
-            low_abs = open_abs + low_diff
-            pre_diff_base = open_abs + close_diff
-
-            bars.append(SecurityBar(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0, low=low_abs / 1000.0, vol=vol, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
-
-        return bars
-
-
-class GetIndexBarsCmd(GetSecurityBarsCmd):
-    """获取指数 K 线 """
-
-    def parse_response(self, body: bytes) -> list[SecurityBar]:
-        (ret_count,) = unpack_from("<H", body, 0, "security_bars header")
-        pos = 2
-        bars: list[SecurityBar] = []
-        pre_diff_base = 0
-        cat = int(self.category)
-
-        for _ in range(ret_count):
-            record_start = pos
-            year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
-            open_diff, pos = get_price(body, pos)
-            close_diff, pos = get_price(body, pos)
-            high_diff, pos = get_price(body, pos)
-            low_diff, pos = get_price(body, pos)
-            vol, pos = get_volume(body, pos)
-            amount, pos = get_volume(body, pos)
-            pos += 4
-
-            open_abs = open_diff + pre_diff_base
-            close_abs = open_abs + close_diff
-            high_abs = open_abs + high_diff
-            low_abs = open_abs + low_diff
-            pre_diff_base = open_abs + close_diff
-
-            bars.append(SecurityBar(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0, low=low_abs / 1000.0, vol=vol, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
-
-        return bars
-
-
-class GetSecurityCountCmd(BaseCommand):
-    """返回指定市场的证券总数。
-
-    心跳命令也可复用此命令（pytdx 用随机 market 发心跳）。
-    """
-
-    def __init__(self, market: Market):
-        self.market = market
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c0c186c000108000800 4e04".replace(" ", ""))
-        return header + struct.pack("<H", int(self.market)) + b"\x75\xc7\x33\x01"
-
-    def parse_response(self, body: bytes) -> int:
-        (count,) = unpack_from("<H", body, 0, "security_count")
-        return int(count)
-
-
-class GetSecurityQuotesCmd(BaseCommand):
-    """批量获取实时行情（最多 80 只）。
-
-    Args:
-        stocks: [(market, code), ...] 列表
-    """
-
-    def __init__(self, stocks: list[tuple[Market, str]]):
-        if not stocks:
-            raise ValueError("stocks 不能为空")
-        if len(stocks) > 80:
-            raise ValueError("单次最多查询 80 只股票")
-        self.stocks = stocks
-
-    def build_request(self) -> bytes:
-        n = len(self.stocks)
-        payload_len = n * 7 + 12
-        header = struct.pack("<HIHHIIHH", 0x010C, 0x02006320, payload_len, payload_len, 0x0005053E, 0, 0, n)
-        body = bytearray(header)
-        for market, code in self.stocks:
-            body.extend(struct.pack("<B6s", int(market), code.encode("utf-8")))
-        return bytes(body)
-
-    def parse_response(self, body: bytes) -> list[SecurityQuote]:
-        pos = 0
-        # pytdx 跳过前2字节（b1 cb 魔数）
-        pos += 2
-        (num,) = unpack_from("<H", body, pos, "security_quotes header")
-        pos += 2
-
-        results: list[SecurityQuote] = []
-
-        for _ in range(num):
-            record_start = pos
-
-            market_b, code_b, active1 = unpack_from("<B6sH", body, pos, "security_quotes record header")
-            pos += 9
-
-            price_raw, pos = get_price(body, pos)
-            last_close_diff, pos = get_price(body, pos)
-            open_diff, pos = get_price(body, pos)
-            high_diff, pos = get_price(body, pos)
-            low_diff, pos = get_price(body, pos)
-
-            # unknown_0: 服务器时间戳原始整数（get_price 解码）
-            unknown_0, pos = get_price(body, pos)
-            # unknown_1: 通常等于 -price_raw（pytdx 注释推测）
-            unknown_1, pos = get_price(body, pos)
-
-            vol, pos = get_price(body, pos)
-            cur_vol, pos = get_price(body, pos)
-
-            amount, _ = get_volume(body, pos)
-            pos += 4
-
-            s_vol, pos = get_price(body, pos)
-            b_vol, pos = get_price(body, pos)
-
-            unknown_2, pos = get_price(body, pos)  # IndexOpenAmount(指数)/舍入残差(个股)
-            unknown_3, pos = get_price(body, pos)  # StockOpenAmount(个股)/负值(指数)
-
-            # 五档买盘
-            bid1_d, pos = get_price(body, pos)
-            ask1_d, pos = get_price(body, pos)
-            bv1, pos = get_price(body, pos)
-            av1, pos = get_price(body, pos)
-
-            bid2_d, pos = get_price(body, pos)
-            ask2_d, pos = get_price(body, pos)
-            bv2, pos = get_price(body, pos)
-            av2, pos = get_price(body, pos)
-
-            bid3_d, pos = get_price(body, pos)
-            ask3_d, pos = get_price(body, pos)
-            bv3, pos = get_price(body, pos)
-            av3, pos = get_price(body, pos)
-
-            bid4_d, pos = get_price(body, pos)
-            ask4_d, pos = get_price(body, pos)
-            bv4, pos = get_price(body, pos)
-            av4, pos = get_price(body, pos)
-
-            bid5_d, pos = get_price(body, pos)
-            ask5_d, pos = get_price(body, pos)
-            bv5, pos = get_price(body, pos)
-            av5, pos = get_price(body, pos)
-
-            # 尾部：2字节 H（交易状态标志，0x8020=停牌）+ 4个 get_price + 2字节 h + 2字节 H
-            (trading_status,) = unpack_from("<H", body, pos, "security_quotes tail flag")
-            pos += 2
-            unknown_5, pos = get_price(body, pos)
-            unknown_6, pos = get_price(body, pos)
-            unknown_7, pos = get_price(body, pos)
-            unknown_8, pos = get_price(body, pos)
-            rise_speed_raw, active2 = unpack_from("<hH", body, pos, "security_quotes tail")
-            pos += 4
-
-            p = price_raw / 100.0
-            try:
-                market = Market(market_b)
-            except ValueError as e:
-                raise Exception(f"security_quotes 非法 market 值: {market_b}") from e
-
-            results.append(SecurityQuote(market=market, code=code_b.decode("utf-8").rstrip("\x00"), price=p, pre_close=(price_raw + last_close_diff) / 100.0, open=(price_raw + open_diff) / 100.0, high=(price_raw + high_diff) / 100.0, low=(price_raw + low_diff) / 100.0, vol=float(vol), cur_vol=float(cur_vol), amount=amount, s_vol=float(s_vol), b_vol=float(b_vol), active1=active1, active2=active2, bid1=(price_raw + bid1_d) / 100.0, bid_vol1=float(bv1), bid2=(price_raw + bid2_d) / 100.0, bid_vol2=float(bv2), bid3=(price_raw + bid3_d) / 100.0, bid_vol3=float(bv3), bid4=(price_raw + bid4_d) / 100.0, bid_vol4=float(bv4), bid5=(price_raw + bid5_d) / 100.0, bid_vol5=float(bv5), ask1=(price_raw + ask1_d) / 100.0, ask_vol1=float(av1), ask2=(price_raw + ask2_d) / 100.0, ask_vol2=float(av2), ask3=(price_raw + ask3_d) / 100.0, ask_vol3=float(av3), ask4=(price_raw + ask4_d) / 100.0, ask_vol4=float(av4), ask5=(price_raw + ask5_d) / 100.0, ask_vol5=float(av5), rise_speed=rise_speed_raw / 100.0, limit_up=None, limit_down=None, unknown_2=unknown_2, unknown_3=unknown_3, unknown_5=unknown_5, unknown_6=unknown_6, unknown_7=unknown_7, unknown_8=unknown_8, server_time=_format_server_time(unknown_0), trading_status=trading_status, open_amount=unknown_3 * 100.0, _raw=body[record_start:pos]))
-
-        return results
-
-
-class GetTransactionDataCmd(BaseCommand):
-    """获取当日逐笔成交（分页，每次最多 800 条）。"""
-
-    def __init__(self, market: Market, code: str, start: int, count: int = 800):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", ""))
-        return header + struct.pack("<H6sHH", int(self.market), self.code, self.start, self.count)
-
-    def parse_response(self, body: bytes) -> list[TransactionRecord]:
-        return _parse_transaction_body(body)
-
-
-class GetHistoryTransactionDataCmd(BaseCommand):
-    """获取历史某日逐笔成交（date 格式 YYYYMMDD，分页）。"""
-
-    def __init__(self, market: Market, code: str, date: int, start: int, count: int = 800):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.date = date
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        # 历史逐笔：header + pack("<IH6sHH", date, market, code, start, count)
-        header = bytes.fromhex("0c013001000112001200b50f".replace(" ", ""))
-        return header + struct.pack("<IH6sHH", self.date, int(self.market), self.code, self.start, self.count)
-
-    def parse_response(self, body: bytes) -> list[TransactionRecord]:
-        """历史逐笔：num(2) + skip(4) + [time + price + vol + buyorsell + unknown]"""
-        (num,) = unpack_from("<H", body, 0, "history_transaction header")
-        pos = 6  # 2(num) + 4(skip)
-        last_price = 0
-        records: list[TransactionRecord] = []
-
-        for _ in range(num):
-            record_start = pos
-            hour, minute, pos = get_time(body, pos)
-            price_diff, pos = get_price(body, pos)
-            vol, pos = get_price(body, pos)
-            buyorsell, pos = get_price(body, pos)  # 历史无 num_orders
-            unknown_last, pos = get_price(body, pos)
-            last_price += price_diff
-            records.append(
-                TransactionRecord(hour=hour, minute=minute, price=last_price / 100.0, vol=vol, buyorsell=buyorsell,
-                                  unknown_last=unknown_last, _raw=body[record_start:pos]))
-        return records
-
-
-class GetXdxrInfoCmd(BaseCommand):
-    """获取除权除息历史记录。"""
-
-    def __init__(self, market: Market, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c1f18760001 0b000b000f000100".replace(" ", ""))
-        return header + struct.pack("<B6s", int(self.market), self.code)
-
-    def parse_response(self, body: bytes) -> list[XdxrRecord]:
-        if len(body) < 11:
-            raise Exception("xdxr_info body 过短")
-        XDXR_CATEGORY_NAMES: dict[int, str] = {
-            1: "除权除息", 2: "送配股上市", 3: "非流通股上市", 4: "未知股本变动", 5: "股本变化", 6: "增发新股",
-            7: "股份回购", 8: "增发新股上市", 9: "转配股上市", 10: "可转债上市", 11: "扩缩股", 12: "非流通股缩股",
-            13: "送认购权证", 14: "送认沽权证", }
-
-        pos = 9  # 跳过9字节（market+code+未知）
-        (num,) = unpack_from("<H", body, pos, "xdxr_info header")
-        pos += 2
-
-        records: list[XdxrRecord] = []
-
-        for _ in range(num):
-            record_start = pos
-
-            # Bug #1 修复：从当前 pos 读，而非 body[:7]
-            market_b, code_b = unpack_from("<B6s", body, pos, "xdxr_info record header")
-            pos += 7
-            slice_bytes(body, pos, 1, "xdxr_info record padding")
-            pos += 1  # 跳过1个未知字节
-
-            year, month, day, _hour, _min, pos = get_datetime(9, body, pos)
-            (category,) = unpack_from("<B", body, pos, "xdxr_info category")
-            pos += 1
-
-            chunk = slice_bytes(body, pos, 16, "xdxr_info record body")
-            pos += 16
-            try:
-                market = Market(market_b)
-            except ValueError as e:
-                raise Exception(f"xdxr_info 非法 market 值: {market_b}") from e
-
-            rec = XdxrRecord(market=market, code=code_b.decode("utf-8").rstrip("\x00"), year=year, month=month, day=day, category=category, name=XDXR_CATEGORY_NAMES.get(category, str(category)), _raw=body[record_start:pos])
-
-            if category == 1:
-                fenhong, peigujia, songzhuangu, peigu = struct.unpack("<ffff", chunk)
-                rec.fenhong = _normalize_per_10_shares(fenhong)
-                rec.peigujia = peigujia
-                rec.songzhuangu = _normalize_per_10_shares(songzhuangu)
-                rec.peigu = _normalize_per_10_shares(peigu)
-            elif category in (11, 12):
-                _, _, suogu, _ = struct.unpack("<IIfI", chunk)
-                rec.suogu = suogu
-            elif category in (13, 14):
-                xingquanjia, _, fenshu, _ = struct.unpack("<fIfI", chunk)
-                rec.xingquanjia = xingquanjia
-                rec.fenshu = fenshu
-            else:
-                # 股本变动类：4个 uint32，代表前后流通/总股本
-                ql_raw, qz_raw, hl_raw, hz_raw = struct.unpack("<IIII", chunk)
-                rec.panqian_liutong = _decode_share_count(ql_raw)
-                rec.qian_zongguben = _decode_share_count(qz_raw)
-                rec.panhou_liutong = _decode_share_count(hl_raw)
-                rec.hou_zongguben = _decode_share_count(hz_raw)
-
-            records.append(rec)
-
-        return records
-
-
-class BoardListCmd(BaseCommand):
-    """查询板块列表。
-
-    Parameters
-    ----------
-    board_type : BoardType
-        板块类型（行业、概念、风格等）。
-    start : int
-        起始偏移量。
-    page_size : int
-        每页数量。
-    """
-
-    def __init__(self, board_type: BoardType = BoardType.ALL, start: int = 0, page_size: int = 150):
-        self._board_type = board_type
-        self._start = start
-        self._page_size = page_size
-
-    def build_request(self) -> bytes:
-        # <HHBBHH8x: page_size, board_type, sort_col(0), sort_order(0), start, flag(1)
-        body = struct.pack("<HHBBHH8x", self._page_size, int(self._board_type), 0,  # sort_column: 0 = rise_speed
-            0,  # sort_order
-            self._start, 1)  # flag
-        return build_mac_request(0x1231, body)
-
-    def parse_response(self, body: bytes) -> list[BoardInfo]:
-        count_all, total = unpack_from("<HH", body, 0, "board_list header")
-        # 服务器返回 count_all = 2 * actual_count（board_info + symbol_info 各一份）
-        count = count_all // 2
-
-        # 板板信息 + 领涨股信息，每组 160 字节
-        # fmt: H(2) + 6s(6) + 16s(16) + 44s(44) + f(4) + f(4) + f(4) = 80
-        # x2 for board + symbol = 160
-        _RECORD_FMT = "<H6s16s44sfffH6s16s44sfff"
-        _RECORD_SIZE = struct.calcsize(_RECORD_FMT)  # 160
-        results: list[BoardInfo] = []
-        for i in range(count):
-            offset = 4 + i * _RECORD_SIZE
-            (market, code_raw, _pad1, name_raw, price, rise_speed, pre_close, symbol_market, symbol_code_raw, _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = unpack_from(_RECORD_FMT, body, offset, f"board_list record[{i}]")
-
-            results.append(BoardInfo(market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), price=price, rise_speed=rise_speed, pre_close=pre_close, symbol_market=symbol_market, symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"), symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"), symbol_price=symbol_price, symbol_rise_speed=symbol_rise_speed, symbol_pre_close=symbol_pre_close))
-
-        return results
 
 
 class BoardMembersQuotesCmd(BaseCommand):
@@ -3648,29 +3214,32 @@ class MacClient(Client):
         info = self._execute(SymbolInfoCmd(market, code))
         return _to_df(info)
 
-    def get_board_list(self, board_type: BoardType = BoardType.ALL, count: int = 10000) -> pd.DataFrame:
-        """获取板块列表（自动分页）。
-
-        Args:
-            board_type: 板块类型。
-            count: 请求总数。
-        """
-        all_items = self._execute(BoardListCmd(board_type, 0, min(count, 150)))
-        fetched = len(all_items)
-        offset = fetched
-
-        while fetched < count:
-            page_size = min(count - fetched, 150)
-            batch = self._execute(BoardListCmd(board_type, offset, page_size))
-            if not batch:
+    def get_board_list(self, board_type: BoardType = BoardType.ALL) -> pd.DataFrame:
+        """获取板块列表（自动分页） """
+        results = []
+        for page in range(100):
+            pkg = build_mac_request(0x1231, struct.pack("<HHBBHH8x", 150, int(board_type), 0, 0, page * 150, 1))
+            body = self._execute(pkg)
+            count_all, total = unpack_from("<HH", body, 0, "board_list header")
+            count = count_all // 2
+            _RECORD_FMT = "<H6s16s44sfffH6s16s44sfff"
+            _RECORD_SIZE = struct.calcsize(_RECORD_FMT)  # 160
+            for i in range(count):
+                offset = 4 + i * _RECORD_SIZE
+                (market, code_raw, _pad1, name_raw, price, rise_speed, pre_close, symbol_market, symbol_code_raw,
+                 _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = unpack_from(
+                    _RECORD_FMT, body, offset, f"board_list record[{i}]")
+                results.append(
+                    BoardInfo(market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                              name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), price=price,
+                              rise_speed=rise_speed, pre_close=pre_close, symbol_market=symbol_market,
+                              symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                              symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"),
+                              symbol_price=symbol_price, symbol_rise_speed=symbol_rise_speed,
+                              symbol_pre_close=symbol_pre_close))
+            if count < 150:
                 break
-            all_items.extend(batch)
-            fetched += len(batch)
-            offset += len(batch)
-            if len(batch) < page_size:
-                break
-
-        return _to_df(all_items)
+        return pd.DataFrame(results)
 
     def get_board_members(self, board_symbol: str, count: int = 100000, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, fields: object = PresetField.COMMON, exclude_flags: list[FilterType] = None) -> pd.DataFrame:
         """获取板块成分股报价（自动分页）。
@@ -4109,37 +3678,163 @@ class MacClient(Client):
 class TdxClient(Client):
     def get_security_quotes(self, stocks: list[tuple[Market, str]]) -> pd.DataFrame:
         """批量获取实时五档行情（最多80只/次）。"""
-        return _to_df(self._execute(GetSecurityQuotesCmd(stocks)))
+        n = len(stocks)
+        header = struct.pack("<HIHHIIHH", 0x010C, 0x02006320, n * 7 + 12, n * 7 + 12, 0x0005053E, 0, 0, n)
+        body = bytearray(header)
+        for market, code in stocks:
+            body.extend(struct.pack("<B6s", int(market), code.encode("utf-8")))
+        body = self._execute(bytes(body))
+        pos = 0
+        pos += 2
+        (num,) = unpack_from("<H", body, pos, "security_quotes header")
+        pos += 2
+        results = []
+        for _ in range(num):
+            record_start = pos
+            market_b, code_b, active1 = unpack_from("<B6sH", body, pos, "security_quotes record header")
+            pos += 9
+            price_raw, pos = get_price(body, pos)
+            last_close_diff, pos = get_price(body, pos)
+            open_diff, pos = get_price(body, pos)
+            high_diff, pos = get_price(body, pos)
+            low_diff, pos = get_price(body, pos)
+            unknown_0, pos = get_price(body, pos)
+            unknown_1, pos = get_price(body, pos)
+            vol, pos = get_price(body, pos)
+            cur_vol, pos = get_price(body, pos)
+            amount, _ = get_volume(body, pos)
+            pos += 4
+
+            s_vol, pos = get_price(body, pos)
+            b_vol, pos = get_price(body, pos)
+
+            unknown_2, pos = get_price(body, pos)  # IndexOpenAmount(指数)/舍入残差(个股)
+            unknown_3, pos = get_price(body, pos)  # StockOpenAmount(个股)/负值(指数)
+
+            # 五档买盘
+            bid1_d, pos = get_price(body, pos)
+            ask1_d, pos = get_price(body, pos)
+            bv1, pos = get_price(body, pos)
+            av1, pos = get_price(body, pos)
+
+            bid2_d, pos = get_price(body, pos)
+            ask2_d, pos = get_price(body, pos)
+            bv2, pos = get_price(body, pos)
+            av2, pos = get_price(body, pos)
+
+            bid3_d, pos = get_price(body, pos)
+            ask3_d, pos = get_price(body, pos)
+            bv3, pos = get_price(body, pos)
+            av3, pos = get_price(body, pos)
+
+            bid4_d, pos = get_price(body, pos)
+            ask4_d, pos = get_price(body, pos)
+            bv4, pos = get_price(body, pos)
+            av4, pos = get_price(body, pos)
+
+            bid5_d, pos = get_price(body, pos)
+            ask5_d, pos = get_price(body, pos)
+            bv5, pos = get_price(body, pos)
+            av5, pos = get_price(body, pos)
+            (trading_status,) = unpack_from("<H", body, pos, "security_quotes tail flag")
+            pos += 2
+            unknown_5, pos = get_price(body, pos)
+            unknown_6, pos = get_price(body, pos)
+            unknown_7, pos = get_price(body, pos)
+            unknown_8, pos = get_price(body, pos)
+            rise_speed_raw, active2 = unpack_from("<hH", body, pos, "security_quotes tail")
+            pos += 4
+            p = price_raw / 100.0
+            results.append(dict(code=code_b.decode("utf-8").rstrip("\x00"), price=p,
+                 pre_close=(price_raw + last_close_diff) / 100.0,
+                 open=(price_raw + open_diff) / 100.0,
+                 high=(price_raw + high_diff) / 100.0,
+                 low=(price_raw + low_diff) / 100.0, vol=float(vol),
+                 cur_vol=float(cur_vol), amount=amount, s_vol=float(s_vol),
+                 b_vol=float(b_vol), active1=active1, active2=active2,
+                 bid1=(price_raw + bid1_d) / 100.0, bid_vol1=float(bv1),
+                 bid2=(price_raw + bid2_d) / 100.0, bid_vol2=float(bv2),
+                 bid3=(price_raw + bid3_d) / 100.0, bid_vol3=float(bv3),
+                 bid4=(price_raw + bid4_d) / 100.0, bid_vol4=float(bv4),
+                 bid5=(price_raw + bid5_d) / 100.0, bid_vol5=float(bv5),
+                 ask1=(price_raw + ask1_d) / 100.0, ask_vol1=float(av1),
+                 ask2=(price_raw + ask2_d) / 100.0, ask_vol2=float(av2),
+                 ask3=(price_raw + ask3_d) / 100.0, ask_vol3=float(av3),
+                 ask4=(price_raw + ask4_d) / 100.0, ask_vol4=float(av4),
+                 ask5=(price_raw + ask5_d) / 100.0, ask_vol5=float(av5),
+                 rise_speed=rise_speed_raw / 100.0, limit_up=None, limit_down=None,
+                 unknown_2=unknown_2, unknown_3=unknown_3, unknown_5=unknown_5,
+                 unknown_6=unknown_6, unknown_7=unknown_7, unknown_8=unknown_8,
+                 server_time=_format_server_time(unknown_0),
+                 trading_status=trading_status, open_amount=unknown_3 * 100.0))
+        return pd.DataFrame(results)
 
     def get_price_limits(self, market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
         """按当前交易状态计算涨跌停价。
-
         对上市初期不设涨跌幅限制的标的，会先用日 K 线条数估算已上市交易天数。
         """
-        listed_days: int = None
-        no_limit_window_days = get_no_limit_window_days(market, code, name)
-        if no_limit_window_days > 0:
-            try:
-                bars = self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, no_limit_window_days + 1))
-                listed_days = len(bars)
-            except Exception:
-                listed_days = None
+        return compute_price_limits(market, code, name, pre_close)
 
-        return compute_price_limits(market, code, name, pre_close, listed_days=listed_days)
-
-    def get_security_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
+    def get_security_bars(self, market=Market.SH, code='600600', category=KlineCategory.DAY) -> pd.DataFrame:
         """获取 K 线数据（最多800条/次，按 start 分页）。"""
-        df = _to_df(self._execute(GetSecurityBarsCmd(market, code, category, start, count)))
-        _DAILY_PLUS = frozenset(
-            {KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
-        return _merge_bar_datetime(df, category in _DAILY_PLUS)
+        bars: list[SecurityBar] = []
+        for page in range(30):
+            pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market), code.encode("utf-8"), int(category), 1, page * 800, 800, 0, 0, 0)
+            body = self._execute(pkg)
+            ret_count = unpack_from("<H", body, 0, "security_bars header")[0]
+            pos = 2
+            pre_diff_base = 0
+            cat = int(category)
+            for _ in range(ret_count):
+                record_start = pos
+                year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
+                open_diff, pos = get_price(body, pos)
+                close_diff, pos = get_price(body, pos)
+                high_diff, pos = get_price(body, pos)
+                low_diff, pos = get_price(body, pos)
 
-    def get_index_bars(self, market: Market, code: str, category: KlineCategory, start: int, count: int = 800) -> pd.DataFrame:
+                vol, pos = get_volume(body, pos)
+                amount, pos = get_volume(body, pos)
+                open_abs = open_diff + pre_diff_base
+                close_abs = open_abs + close_diff
+                high_abs = open_abs + high_diff
+                low_abs = open_abs + low_diff
+                pre_diff_base = open_abs + close_diff
+                bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
+                                        low=low_abs / 1000.0, vol=vol, amount=amount, date=datetime(year=year, month=month,
+                                        day=day, hour=hour, minute=minute)))
+            if ret_count < 800:
+                break
+        return pd.DataFrame(bars)
+
+    def get_index_bars(self, market=Market.SH, code='000001', category=KlineCategory.DAY, start=0, count: int = 800) -> pd.DataFrame:
         """获取指数 K 线数据。"""
-        df = _to_df(self._execute(GetIndexBarsCmd(market, code, category, start, count)))
-        _DAILY_PLUS = frozenset(
-            {KlineCategory.DAY, KlineCategory.WEEK, KlineCategory.MONTH, KlineCategory.YEAR, KlineCategory.YEAR_ALT, })
-        return _merge_bar_datetime(df, category in _DAILY_PLUS)
+        pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market), code.encode('utf8'), int(category), 1, start, count, 0, 0, 0)
+        body = self._execute(pkg)
+        ret_count = unpack_from("<H", body, 0, "security_bars header")[0]
+        pos = 2
+        bars: list[SecurityBar] = []
+        pre_diff_base = 0
+        cat = int(category)
+        for _ in range(ret_count):
+            record_start = pos
+            year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
+            open_diff, pos = get_price(body, pos)
+            close_diff, pos = get_price(body, pos)
+            high_diff, pos = get_price(body, pos)
+            low_diff, pos = get_price(body, pos)
+            vol, pos = get_volume(body, pos)
+            amount, pos = get_volume(body, pos)
+            pos += 4
+            open_abs = open_diff + pre_diff_base
+            close_abs = open_abs + close_diff
+            high_abs = open_abs + high_diff
+            low_abs = open_abs + low_diff
+            pre_diff_base = open_abs + close_diff
+            bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
+                                    low=low_abs / 1000.0, vol=vol, amount=amount, date=datetime(year=year, month=month,
+                                    day=day, hour=hour, minute=minute)))
+        return pd.DataFrame(bars)
 
     def get_history_minute_time_data(self, market=Market.SH, code='600600', date=0) -> pd.DataFrame:
         """获取历史某日分时数据（date: YYYYMMDD）0代表今天 """
@@ -4152,19 +3847,89 @@ class TdxClient(Client):
         df["date"] = base + offsets
         return df
 
-    def get_transaction_data(self, market: Market, code: str, start: int, count: int = 800) -> pd.DataFrame:
+    def get_transaction_data(self, market=Market.SH, code='600600', page=0) -> pd.DataFrame:
         """获取当日逐笔成交（分页）。"""
-        df = _to_df(self._execute(GetTransactionDataCmd(market, code, start, count)))
-        return _merge_txn_datetime(df, int(datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")))
+        pkg = bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", "")) + struct.pack("<H6sHH", int(market), code.encode("utf-8"), page * 800, 800)
+        df = _parse_transaction_body(self._execute(pkg))
+        return pd.DataFrame(df)
 
-    def get_history_transaction_data(self, market: Market, code: str, date: int, start: int, count: int = 800) -> pd.DataFrame:
+    def get_history_transaction_data(self, market=Market.SH, code='600600', date=20260629, start=0) -> pd.DataFrame:
         """获取历史逐笔成交（date: YYYYMMDD，分页）。"""
-        df = _to_df(self._execute(GetHistoryTransactionDataCmd(market, code, date, start, count)))
-        return _merge_txn_datetime(df, date)
+        pkg = bytes.fromhex("0c013001000112001200b50f".replace(" ", "")) + struct.pack("<IH6sHH", date, int(market), code.encode("utf-8"), start, 800)
+        body = self._execute(pkg)
+        num = unpack_from("<H", body, 0, "history_transaction header")[0]
+        pos = 6
+        last_price = 0
+        records = []
+        for _ in range(num):
+            record_start = pos
+            hour, minute, pos = get_time(body, pos)
+            price_diff, pos = get_price(body, pos)
+            vol, pos = get_price(body, pos)
+            buyorsell, pos = get_price(body, pos)  # 历史无 num_orders
+            unknown_last, pos = get_price(body, pos)
+            last_price += price_diff
+            records.append(TransactionRecord(hour=hour, minute=minute, price=last_price / 100.0, vol=vol, buyorsell=buyorsell, unknown_last=unknown_last, _raw=body[record_start:pos]))
+        return records
 
-    def get_xdxr_info(self, market: Market, code: str) -> pd.DataFrame:
+    def get_xdxr_info(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取除权除息历史记录。"""
-        return _to_df(self._execute(GetXdxrInfoCmd(market, code)))
+        pkg = bytes.fromhex("0c1f18760001 0b000b000f000100".replace(" ", "")) + struct.pack("<B6s", int(market), code.encode("utf-8"))
+        body = self._execute(pkg)
+        XDXR_CATEGORY_NAMES: dict[int, str] = {
+            1: "除权除息", 2: "送配股上市", 3: "非流通股上市", 4: "未知股本变动", 5: "股本变化", 6: "增发新股",
+            7: "股份回购", 8: "增发新股上市", 9: "转配股上市", 10: "可转债上市", 11: "扩缩股",
+            12: "非流通股缩股",
+            13: "送认购权证", 14: "送认沽权证", }
+
+        pos = 9  # 跳过9字节（market+code+未知）
+        num = unpack_from("<H", body, pos, "xdxr_info header")[0]
+        pos += 2
+
+        records: list[XdxrRecord] = []
+
+        for _ in range(num):
+            record_start = pos
+
+            # Bug #1 修复：从当前 pos 读，而非 body[:7]
+            market_b, code_b = unpack_from("<B6s", body, pos, "xdxr_info record header")
+            pos += 7
+            slice_bytes(body, pos, 1, "xdxr_info record padding")
+            pos += 1  # 跳过1个未知字节
+
+            year, month, day, _hour, _min, pos = get_datetime(9, body, pos)
+            category = unpack_from("<B", body, pos, "xdxr_info category")[0]
+            pos += 1
+
+            chunk = slice_bytes(body, pos, 16, "xdxr_info record body")
+            pos += 16
+            rec = Dot(code=code_b.decode("utf-8").rstrip("\x00"), date=datetime(year=year, month=month,
+                             day=day), category=category, name=XDXR_CATEGORY_NAMES.get(category, str(category)))
+
+            if category == 1:
+                fenhong, peigujia, songzhuangu, peigu = struct.unpack("<ffff", chunk)
+                rec.fenhong = _normalize_per_10_shares(fenhong)
+                rec.peigujia = peigujia
+                rec.songzhuangu = _normalize_per_10_shares(songzhuangu)
+                rec.peigu = _normalize_per_10_shares(peigu)
+            elif category in (11, 12):
+                _, _, suogu, _ = struct.unpack("<IIfI", chunk)
+                rec.suogu = suogu
+            elif category in (13, 14):
+                xingquanjia, _, fenshu, _ = struct.unpack("<fIfI", chunk)
+                rec.xingquanjia = xingquanjia
+                rec.fenshu = fenshu
+            else:
+                # 股本变动类：4个 uint32，代表前后流通/总股本
+                ql_raw, qz_raw, hl_raw, hz_raw = struct.unpack("<IIII", chunk)
+                rec.panqian_liutong = _decode_share_count(ql_raw)
+                rec.qian_zongguben = _decode_share_count(qz_raw)
+                rec.panhou_liutong = _decode_share_count(hl_raw)
+                rec.hou_zongguben = _decode_share_count(hz_raw)
+
+            records.append(dict(rec))
+
+        return pd.DataFrame(records)
 
     def get_finance_info(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取最新财务数据。"""
@@ -4242,27 +4007,19 @@ class TdxClient(Client):
         return pd.DataFrame(results)
 
     def get_market_stat(self) -> pd.DataFrame:
-        """获取 A 股全市场涨跌统计概况（基于 880005 行情统计）。
-
-        注意：
-            `suspended_count` 是 `total - up - down - neutral` 的残差估算值，
-            用于保证计数守恒，不应视为协议已明确验证的停牌字段。
-        """
         # 通达信中 880005 是全市场行情统计，880001 是总市值指数，880006 是涨跌停统计
-        quotes = self._execute(GetSecurityQuotesCmd([(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")]))
-        if not quotes:
-            raise RuntimeError("无法获取市场统计数据")
-        q = quotes[0]
+        quotes = self.get_security_quotes([(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")])
+        q = quotes.iloc[0]
         up = int(q.price)
         down = int(q.open)
         neutral = int(q.low)
         total = int(q.high)
-        market_cap = quotes[1].price * 1e10 if len(quotes) > 1 else 0.0
-        limit_down = int(quotes[2].open) if len(quotes) > 2 else 0
-        limit_up = int(quotes[2].price) if len(quotes) > 2 else 0
-        return _to_df(MarketStat(up_count=up, down_count=down, neutral_count=neutral, suspended_count=max(0, total - up - down - neutral), total_count=total, total_amount=q.amount, total_volume=q.vol, total_market_cap=market_cap, limit_up_count=limit_up, limit_down_count=limit_down))
+        market_cap = quotes.iloc[1].price * 1e10
+        limit_down = int(quotes.iloc[2].open)
+        limit_up = int(quotes.iloc[2].price)
+        return dict(up_count=up, down_count=down, neutral_count=neutral, suspended_count=max(0, total - up - down - neutral), total_count=total, total_amount=q.amount, total_volume=q.vol, total_market_cap=market_cap, limit_up_count=limit_up, limit_down_count=limit_down)
 
-    def _collect_transaction_records(self, fetch_page: Callable[[int, int], list[TransactionRecord]], page_size: int, max_start: int = 10000) -> list[TransactionRecord]:
+    def _collect_transaction_records(self, fetch_page: Callable[[int, int], list[TransactionRecord]], max_start: int = 10000) -> list[TransactionRecord]:
         all_recs: list[TransactionRecord] = []
         seen_sig: set[tuple[int, int, float, int, int, int]] = set()
         seen_page_sigs: set[
@@ -4272,7 +4029,7 @@ class TdxClient(Client):
         start = 0
 
         while start < max_start:
-            recs = fetch_page(start, page_size)
+            recs = fetch_page(start)
             if not recs:
                 break
 
@@ -4298,23 +4055,23 @@ class TdxClient(Client):
 
         return all_recs
 
-    def get_fund_flow(self, market: Market, code: str) -> pd.DataFrame:
+    def get_fund_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股当日资金流向分布（基于 L1 逐笔数据统计）。"""
-        records = self._collect_transaction_records(lambda start, page_size: self._execute(GetTransactionDataCmd(market, code, start, page_size)), 2000)
+        records = self._collect_transaction_records(lambda start: _parse_transaction_body(self._execute(bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", "")) + struct.pack("<H6sHH", int(market), code.encode("utf-8"), start, 800))))
         return _to_df(_classify_fund_flow(records))
 
     def get_history_fund_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股历史日线资金流向序列 """
-        bars = self._execute(GetSecurityBarsCmd(market, code, KlineCategory.DAY, 0, 1000000))
-        results: list[HistoricalFundFlow] = []
-        for bar in bars:
+        bars = self.get_security_bars(market, code, KlineCategory.DAY)
+        results = []
+        for i, bar in bars.T.items():
             date = bar.year * 10000 + bar.month * 100 + bar.day
-            records = self._collect_transaction_records(lambda page_start, page_size: self._execute(GetHistoryTransactionDataCmd(market, code, date, page_start, page_size)), 800)
+            records = self._collect_transaction_records(lambda page_start: self.get_history_transaction_data(market, code, date, page_start))
             flow = _classify_fund_flow(records)
             year = date // 10000
             month = (date // 100) % 100
             day = date % 100
-            res = HistoricalFundFlow(year=year, month=month, day=day, super_in=flow.super_in,
+            res = dict(date=datetime(year=year, month=month, day=day), super_in=flow.super_in,
                                       super_out=flow.super_out, large_in=flow.large_in, large_out=flow.large_out,
                                       medium_in=flow.medium_in, medium_out=flow.medium_out, small_in=flow.small_in,
                                       small_out=flow.small_out)
@@ -4559,24 +4316,9 @@ class MacExClient(Client):
 
 
 if __name__ == '__main__':
-    with TdxClient() as c:
+    with MacClient() as c:
         # 批量报价（最多 80 只/次）
-        us = c.get_security_count()
-        print('us')
-        df = c.get_stock_quotes([(Market.SH, "600519"), (Market.SZ, "000858")])
+        df = c.get_board_list()
         # 市场分类排序报价
         df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
-        print('over')
-
-    with TdxClient() as c:
-        count = c.get_security_count(Market.SH)
-        stocks = c.get_security_list(Market.SH, start=0)
-        quotes = c.get_security_quotes([(Market.SH, "600000"), (Market.SZ, "000001")])
-        bars = c.get_security_bars(Market.SZ, "002176", KlineCategory.DAY, 0, 100)
-        minute = c.get_minute_time_data(Market.SH, "600000")
-        trades = c.get_transaction_data(Market.SH, "600000", 0, 20)
-        flow = c.get_fund_flow(Market.SH, "600519")
-        blocks = c.get_block_info("block_gn.dat")
-        xdxr = c.get_xdxr_info(Market.SH, "600519")
-        stat = c.get_market_stat()
         print('over')
