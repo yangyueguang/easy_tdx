@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from types import TracebackType
 from typing import Union
 from collections import OrderedDict
-from datetime import date as date_cls, datetime
+from datetime import date as date_cls, datetime, time as Time
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, is_dataclass, dataclass, field
 """响应帧头解析与 zlib 解压。
@@ -32,7 +32,7 @@ from dataclasses import asdict, is_dataclass, dataclass, field
 """
 HEADER_SIZE: int = 16
 config = {
-    "best_host": '',
+    "best_host": '121.37.207.165',
     "best_ex_host": '',
     "best_mac_ex_host": '',
     "known_hosts": [
@@ -49,9 +49,7 @@ config = {
 
 class Dot(dict):
     def __init__(self, seq=None, **kwargs):
-        if not isinstance(seq, dict):
-            seq = {'value': seq}
-        super(Dot, self).__init__(seq, **kwargs)
+        super(Dot, self).__init__({} if seq is None else seq if isinstance(seq, dict) else {'value': seq}, **kwargs)
 
     def __getattr__(self, attr):
         res = self.get(attr)
@@ -621,15 +619,6 @@ class FinanceInfo:
 
 
 @dataclass
-class CompanyInfoCategory:
-    """公司信息文件目录条目"""
-    name: str = ""  # 目录名（如“最新提示”）
-    filename: str = ""  # 文件名（如 '600000.txt'）
-    start: int = 0  # 内容起始偏移
-    length: int = 0  # 内容长度（字节）
-
-
-@dataclass
 class FinancialFileInfo:
     """财报 zip 文件索引条目（来自 tdxfin/gpcw.txt）。"""
     filename: str  # "gpcw20260331.zip"
@@ -644,15 +633,6 @@ class FinancialRecord:
     market: Market  # 市场
     report_date: int  # 报告期 YYYYMMDD
     fields: list[float]  # N 个浮点字段（N = report_size / 4）
-
-
-@dataclass
-class TdxBlock:
-    """通达信板块信息（行业、概念、风格等）"""
-    name: str  # 板块名称（如“房地产”）
-    category: int  # 板块分类（0=行业, 1=地域, 2=概念, 3=风格, 等）
-    count: int  # 板块包含股票数量
-    codes: list[str]  # 股票代码列表（6位数字代码）
 
 
 @dataclass
@@ -1051,20 +1031,6 @@ class AuctionItem:
 
 
 @dataclass(frozen=True)
-class UnusualItem:
-    """异动数据。"""
-
-    index: int
-    market: int
-    code: str
-    name: str
-    time: time
-    desc: str
-    value: str
-    unusual_type: int
-
-
-@dataclass(frozen=True)
 class CapitalFlowData:
     """资金流向数据。"""
 
@@ -1325,13 +1291,6 @@ def _normalize_per_10_shares(value: float) -> float:
 
 
 def _to_df(data) -> pd.DataFrame:
-    """将 list[dataclass] 或单个 dataclass 转为 DataFrame。
-
-    自动丢弃以 ``_`` 开头的内部字段（如 ``_raw``）。
-    仅处理 year/month/day（无 hour/minute）→ date 的合并；
-    SecurityBar 的完整 datetime 合并由调用方按周期决定。
-    """
-
     def _clean_dict(item) -> dict:
         d = asdict(item)
         d = {k: v for k, v in d.items() if not k.startswith("_")}
@@ -1342,8 +1301,6 @@ def _to_df(data) -> pd.DataFrame:
             return result
         return d
     if isinstance(data, list):
-        if not data:
-            return pd.DataFrame()
         rows = []
         for item in data:
             d = _clean_dict(item)
@@ -1441,35 +1398,8 @@ def slice_bytes(data: bytes, pos: int, size: int, context: str) -> bytes:
 
 
 def build_mac_request(msg_id: int, body: bytes, *, head_flag: int = 0x1C) -> bytes:
-    """构建 MAC 协议请求帧。
-
-    Parameters
-    ----------
-    msg_id : int
-        MAC 命令 ID（如 0x122B）。
-    body : bytes
-        命令特有的请求体（不含 msg_id 前缀）。
-    head_flag : int
-        帧头标识字节，默认 0x1C（标准 MAC）。部分命令（如 0x1218）
-        使用不同的 head_flag 区分子协议。
-
-    Returns
-    -------
-    bytes
-        完整的请求帧（10 字节头 + 2 字节 msg_id + body）。
-    """
     inner = struct.pack("<H", msg_id) + body
-    header = struct.pack("<BIBHH", head_flag, 0, 1, len(inner), len(inner))
-    return header + inner
-
-
-def _post_ah_code(value: int, market: int = 0) -> str:
-    """A/H股代码补齐位数。"""
-    if not value:
-        return ""
-    # 沪深北 5 位，其他 6 位
-    width = 5 if market in (0, 1) else 6
-    return str(value).zfill(width)
+    return struct.pack("<BIBHH", head_flag, 0, 1, len(inner), len(inner)) + inner
 
 
 def build_bitmap(fields, exclude_flags: int = 0) -> bytearray:
@@ -1535,60 +1465,6 @@ def get_active_fields(bitmap_bytes: bytes) -> list[tuple[FieldBit, str]]:
     return active
 
 
-def parse_block_dat(data: bytes, filename: str = "") -> list["TdxBlock"]:
-    """解析通达信 .dat 板块文件内容。
-
-    格式：
-      Header: 384 字节（跳过）
-      Count:  2 字节 (uint16 LE)
-      Body:   每条记录 2813 字节 (9s + H + H + 2800s)
-    """
-
-    if len(data) < 386:
-        return []
-
-    pos = 384
-    (count,) = struct.unpack("<H", data[pos : pos + 2])
-    pos += 2
-
-    results: list[TdxBlock] = []
-
-    # 推断板块分类 (0=行业, 1=地域, 2=概念, 3=风格)
-    category = 0
-    if "zs" in filename:
-        category = 0
-    elif "gn" in filename:
-        category = 2
-    elif "fg" in filename:
-        category = 3
-
-    for _ in range(count):
-        if len(data) < pos + 2813:
-            break
-
-        # 板块元数据 (9 字节名称 + 2 字节股票数 + 2 字节类型)
-        name_b = data[pos : pos + 9]
-        stock_count, _type = struct.unpack("<HH", data[pos + 9 : pos + 13])
-        name = name_b.decode("gbk", errors="replace").strip("\x00")
-
-        # 股票代码区 (2800 字节，每只股票 7 字节)
-        codes: list[str] = []
-        codes_start = pos + 13
-        # 安全检查：stock_count 不应超过 400 (2800 / 7)
-        actual_count = min(stock_count, 400)
-        for i in range(actual_count):
-            c_start = codes_start + i * 7
-            c_raw = data[c_start : c_start + 7]
-            code = c_raw.decode("ascii", errors="replace").strip("\x00")
-            if code:
-                codes.append(code)
-
-        results.append(TdxBlock(name=name, category=category, count=stock_count, codes=codes))
-
-        # 跳过整个 2813 字节的记录块
-        pos += 2813
-
-    return results
 
 
 def get_datetime_day(data: bytes, pos: int) -> tuple[int, int, int, int]:
@@ -1925,7 +1801,7 @@ def _classify_fund_flow(records: list[TransactionRecord]) -> FundFlow:
 
 
 def _quotes_to_df(result: list['MacQuoteField']) -> pd.DataFrame:
-    """将 MacQuoteField 列表展开为 DataFrame。"""
+    """将 MacQuoteField 列表展开为 DataFrame"""
     rows: list[dict] = []
     for item in result:
         row: dict = {"market": item.market, "code": item.code, "name": item.name}
@@ -1939,90 +1815,7 @@ class BaseCommand(ABC):
     def build_request(self) -> bytes:
         ...
 
-    @abstractmethod
-    def parse_response(self, body: bytes):
-        ...
 
-
-class GetBlockInfoMetaCmd(BaseCommand):
-    def __init__(self, filename: str):
-        self.filename = filename.encode("ascii")
-
-    def build_request(self) -> bytes:
-        # 固定头 12 字节
-        header = bytes.fromhex("0c39186900012a002a00c502")
-        # Payload 为文件名
-        payload = (self.filename + b"\x00" * 40)[:40]
-        return header + payload
-
-    def parse_response(self, body: bytes) -> tuple[int, str]:
-        if len(body) < 38:
-            raise Exception(f"GetBlockInfoMeta 响应过短: {len(body)}")
-
-        size, _, hash_b, _ = struct.unpack("<I1s32s1s", body[:38])
-        return size, hash_b.decode("ascii").strip("\x00")
-
-
-class GetBlockInfoCmd(BaseCommand):
-    """分段获取板块文件二进制内容。
-
-    Args:
-        filename: 板块文件名。
-        start: 起始偏移量（字节）。
-        length: 请求数据长度。
-    """
-
-    def __init__(self, filename: str, start: int, length: int):
-        self.filename = filename.encode("ascii")
-        self.start = start
-        self.length = length
-
-    def build_request(self) -> bytes:
-        # 固定头 12 字节
-        header = bytes.fromhex("0c37186a00016e006e00b906")
-        payload = struct.pack("<II", self.start, self.length)
-        payload += (self.filename + b"\x00" * 100)[:100]
-        return header + payload
-
-    def parse_response(self, body: bytes) -> bytes:
-        if len(body) < 4:
-            return b""
-        return body[4:]
-
-
-class GetCompanyInfoCategoryCmd(BaseCommand):
-    """获取公司信息文件目录（文件名列表 + 每段偏移/长度）。"""
-
-    def __init__(self, market: Market, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("0c0f109b00010e000e00cf02".replace(" ", ""))
-        return header + struct.pack("<H6sI", int(self.market), self.code, 0)
-
-    def parse_response(self, body: bytes) -> list[CompanyInfoCategory]:
-        if len(body) < 2:
-            raise Exception("company_info_category body 过短")
-        (num,) = unpack_from("<H", body, 0, "company_info_category header")
-        pos = 2
-        results: list[CompanyInfoCategory] = []
-
-        # 每条记录：64字节name + 80字节filename + 4字节start + 4字节length = 152字节
-        _RECORD_SIZE = 152
-        for _ in range(num):
-            raw = slice_bytes(body, pos, _RECORD_SIZE, "company_info_category record")
-            name_b, filename_b, start, length = struct.unpack("<64s80sII", raw)
-            pos += _RECORD_SIZE
-
-            def _decode(b: bytes) -> str:
-                nul = b.find(b"\x00")
-                raw = b[:nul] if nul != -1 else b
-                return raw.decode("gbk", errors="replace")
-
-            results.append(CompanyInfoCategory(name=_decode(name_b), filename=_decode(filename_b), start=start, length=length))
-
-        return results
 
 
 class GetCompanyInfoContentCmd(BaseCommand):
@@ -3136,44 +2929,6 @@ class SymbolQuotesCmd(BaseCommand):
             body += struct.pack("<H22s", market, code.encode("gbk"))
         return build_mac_request(0x122B, bytes(body))
 
-    def parse_response(self, body: bytes) -> list[MacQuoteField]:
-        pos = 0
-        field_bitmap = body[pos : pos + 20]
-        pos += 20
-
-        (total_stocks, row_count) = unpack_from("<IH", body, pos, "symbol_quotes header")
-        pos += 6
-
-        active = get_active_fields(field_bitmap[:16])
-        field_count = len(active)
-        row_len = 68 + 4 * field_count
-
-        results: list[MacQuoteField] = []
-        for _ in range(row_count):
-            row_end = pos + row_len
-            if row_end > len(body):
-                break
-            row_data = body[pos:row_end]
-            pos = row_end
-
-            (market, code_raw, name_raw) = unpack_from("<H22s44s", row_data, 0, "symbol_quotes row")
-            code = code_raw.decode("gbk", errors="ignore").replace("\x00", "")
-            name = name_raw.decode("gbk", errors="ignore").replace("\x00", "")
-
-            fields_dict: dict = {}
-            if field_count:
-                for idx, (field_bit, fmt) in enumerate(active):
-                    value_bytes = row_data[68 + idx * 4: 68 + (idx + 1) * 4]
-                    (value,) = struct.unpack(fmt, value_bytes)
-                    # 后处理钩子
-                    FIELD_POSTPROCESS: dict[int, object] = {0x4A: _post_ah_code}
-                    post_fn = FIELD_POSTPROCESS.get(field_bit.value)
-                    if post_fn is not None:
-                        value = post_fn(value, market)  # type: ignore[operator]
-                    fields_dict[field_bit.field_name] = value
-            results.append(MacQuoteField(market=market, code=code, name=name, fields=fields_dict))
-
-        return results
 
 
 class SymbolTickChartCmd(BaseCommand):
@@ -3304,125 +3059,6 @@ class TickChartsCmd(BaseCommand):
         (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close, _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_charts tail")
 
         return MacMultiTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol), amount=amount, turnover=turnover, avg=avg, charts=days)
-
-
-class UnusualCmd(BaseCommand):
-    """查询异动数据。
-
-    Parameters
-    ----------
-    market : int
-        市场代码。
-    start : int
-        起始偏移量。
-    count : int
-        请求数量（最大 600）。
-    """
-
-    def __init__(self, market: int, start: int = 0, count: int = 600):
-        self._market = market
-        self._start = start
-        self._count = min(count, 600)
-
-    def build_request(self) -> bytes:
-        # H:market, H:start, 2x padding, H:count, 2x padding, 5×H monitoring params
-        body = struct.pack("<HH2xH2xH5H", self._market, self._start, self._count, 1, 200, 30, 40, 50, 200)
-        return build_mac_request(0x1237, body)
-
-    def parse_response(self, body: bytes) -> list[UnusualItem]:
-        (count,) = unpack_from("<H", body, 0, "unusual count")
-        results: list[UnusualItem] = []
-        for i in range(count):
-            offset = 2 + i * 32
-            if offset + 32 > len(body):
-                break
-            market, code_raw, _, unusual_type, _, index, _z = unpack_from("<H6sBBBHH", body, offset, f"unusual record[{i}]")
-            data = body[offset + 15 : offset + 28]
-            """根据异动类型解析描述和数值。"""
-            desc = val = ''
-            if len(data) >= 13:
-                v1, v2, v3, v4 = struct.unpack_from("<B2fI", data)
-                if unusual_type == 0x03:
-                    desc = f"主力{'买入' if v1 == 0x00 else '卖出'}"
-                    val = f"{v2:.2f}/{v3:.2f}"
-                elif unusual_type == 0x04:
-                    desc = "加速拉升"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x05:
-                    desc = "加速下跌"
-                    val = ""
-                elif unusual_type == 0x06:
-                    desc = "低位反弹"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x07:
-                    desc = "高位回落"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x08:
-                    desc = "撑杆跳高"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x09:
-                    desc = "平台跳水"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x0A:
-                    desc = f"单笔冲{'跌' if v2 < 0 else '涨'}"
-                    val = f"{v2 * 100:.2f}%"
-                elif unusual_type == 0x0B:
-                    direction = "平" if v3 == 0 else "跌" if v3 < 0 else "涨"
-                    desc = f"区间放量{direction}"
-                    val = f"{v2:.1f}倍" + ("" if v3 == 0 else f"{v3 * 100:.2f}%")
-                elif unusual_type == 0x0C:
-                    desc = "区间缩量"
-                    val = ""
-                elif unusual_type == 0x10:
-                    desc = "大单托盘"
-                    val = f"{v4:.2f}/{v3:.2f}"
-                elif unusual_type == 0x11:
-                    desc = "大单压盘"
-                    val = f"{v2:.2f}/{v3:.2f}"
-                elif unusual_type == 0x12:
-                    desc = "大单锁盘"
-                    val = ""
-                elif unusual_type == 0x13:
-                    desc = "竞价试买"
-                    val = f"{v2:.2f}/{v3:.2f}"
-                elif unusual_type == 0x14:
-                    direction = "涨" if v1 == 0x00 else "跌"
-                    if len(data) >= 10:
-                        sub_type, v2_alt, v3_alt = struct.unpack_from("<Bff", data, 1)
-                    else:
-                        sub_type, v2_alt, v3_alt = 0, 0.0, 0.0
-                    if sub_type == 0x01:
-                        desc = f"逼近{direction}停"
-                    elif sub_type == 0x02:
-                        desc = f"封{direction}停板"
-                    elif sub_type == 0x04:
-                        desc = f"封{direction}大减"
-                    elif sub_type == 0x05:
-                        desc = f"打开{direction}停"
-                    else:
-                        desc = f"涨跌停({direction})"
-                    val = f"{v2_alt:.2f}/{v3_alt:.2f}"
-                else:
-                    desc = f"异动类型{unusual_type:#04x}"
-                    val = ""
-
-            hour, minute_sec = unpack_from("<BH", body, offset + 29, f"unusual time[{i}]")
-
-            results.append(UnusualItem(index=index, market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name="",  # populated below from text section
-                    time=time(hour, minute_sec // 100, minute_sec % 100), desc=desc, value=val, unusual_type=unusual_type))
-
-        # Text section: stock names in GBK, comma-separated
-        binary_length = 2 + count * 32
-        text_bytes = body[binary_length:]
-        text_list = text_bytes.decode("gbk", errors="ignore").strip(",").split(",")
-
-        # Fill names from text section
-        populated: list[UnusualItem] = []
-        for i, item in enumerate(results):
-            name = text_list[i] if i < len(text_list) else ""
-            populated.append(UnusualItem(index=item.index, market=item.market, code=item.code, name=name, time=item.time, desc=item.desc, value=item.value, unusual_type=item.unusual_type))
-
-        return populated
 
 
 class GetExHistoryInstrumentBarsRangeCmd(BaseCommand):
@@ -3860,25 +3496,24 @@ class TdxConnection:
                 pass
             self._sock = None
 
-    def execute(self, cmd: "BaseCommand"):
+    def execute(self, pkg: bytes):
         """执行一条命令：发送请求，接收并解压响应，返回解析结果。"""
         with self._lock:
             self._last_active = time.monotonic()
             self._consecutive_heartbeats = 0
             if self._sock is None:
                 raise Exception("未连接，请先调用 connect()")
-            request = cmd.build_request()
             try:
-                self._sock.sendall(request)
+                self._sock.sendall(pkg)
                 header_buf = self._recv_exact(HEADER_SIZE)
                 header = parse_header(header_buf)
                 raw_body = self._recv_exact(header.zipsize)
             except OSError as e:
                 raise Exception(f"通信错误: {e}") from e
             body = decompress_body(header, raw_body)
-            return cmd.parse_response(body)
+            return body
 
-    def __enter__(self) -> "TdxConnection":
+    def __enter__(self):
         self.connect()
         return self
 
@@ -4002,6 +3637,36 @@ class Client:
         self._host = host or config.get("best_host") or self.from_best_host()
         self._conn = TdxConnection(self._host)
 
+    def _parse_quotes(self, body: bytes):
+        pos = 0
+        field_bitmap = body[pos: pos + 20]
+        pos += 20
+        (total_stocks, row_count) = unpack_from("<IH", body, pos, "symbol_quotes header")
+        pos += 6
+        active = get_active_fields(field_bitmap[:16])
+        field_count = len(active)
+        row_len = 68 + 4 * field_count
+        results = []
+        for _ in range(row_count):
+            row_end = pos + row_len
+            if row_end > len(body):
+                break
+            row_data = body[pos:row_end]
+            pos = row_end
+            (market, code_raw, name_raw) = unpack_from("<H22s44s", row_data, 0, "symbol_quotes row")
+            code = code_raw.decode("gbk", errors="ignore").replace("\x00", "")
+            name = name_raw.decode("gbk", errors="ignore").replace("\x00", "")
+            fields_dict: dict = {}
+            if field_count:
+                for idx, (field_bit, fmt) in enumerate(active):
+                    value_bytes = row_data[68 + idx * 4: 68 + (idx + 1) * 4]
+                    (value,) = struct.unpack(fmt, value_bytes)
+                    if field_bit.value == 0x4A:
+                        value = '' if not value else str(value).zfill(5 if market in (0, 1) else 6)
+                    fields_dict[field_bit.field_name] = value
+            results.append(dict(market=market, code=code, name=name, **fields_dict))
+        return pd.DataFrame(results)
+
     @staticmethod
     def ping_host(host: str, port=7709, pkg=None) -> float:
         t0 = time.monotonic()
@@ -4046,9 +3711,9 @@ class Client:
     def __exit__(self, exc_type: type[BaseException], exc_val: BaseException, exc_tb: TracebackType):
         self.close()
 
-    def _execute(self, cmd: BaseCommand):
+    def _execute(self, pkg: bytes):
         try:
-            return self._conn.execute(cmd)
+            return self._conn.execute(pkg)
         except Exception:
             last_exc = None
             for delay in (0.1, 0.5, 1.0, 2.0):
@@ -4057,7 +3722,7 @@ class Client:
                 self._conn = type(self._conn)(self._host, mac_ex_mode=self._conn.mac_ex_mode)
                 self._conn.connect()
                 try:
-                    return self._conn.execute(cmd)
+                    return self._conn.execute(pkg)
                 except Exception as e:
                     last_exc = e
             raise last_exc
@@ -4065,14 +3730,9 @@ class Client:
 
 class MacClient(Client):
     def get_stock_quotes(self, stocks: list[tuple[int, str]], fields: object = None) -> pd.DataFrame:
-        """批量获取自定义字段报价（最多80只/次）。
-
-        Args:
-            stocks: [(market, code), ...] 列表。
-            fields: 字段选择，默认 PresetField.COMMON。
-        """
+        """批量获取自定义字段报价（最多80只/次）"""
         quotes = self._execute(SymbolQuotesCmd(stocks, fields))
-        return _quotes_to_df(quotes)
+        return self._parse_quotes(quotes)
 
     def get_stock_quotes_list(self, category: Category, start: int = 0, count: int = 80, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC, exclude_flags: list[FilterType] = None, fields = None) -> pd.DataFrame:
         """获取市场分类报价列表（自动分页）。
@@ -4531,16 +4191,94 @@ class MacClient(Client):
         items = self._execute(SymbolAuctionCmd(market, code))
         return _to_df(items)
 
-    def get_unusual(self, market: int, start: int = 0, count: int = 0) -> pd.DataFrame:
-        """获取市场异动数据。
-
-        Args:
-            market: 市场代码。
-            start: 起始偏移。
-            count: 请求数量（0 表示使用默认值 600）。
-        """
-        items = self._execute(UnusualCmd(market, start, count or 600))
-        return _to_df(items)
+    def get_unusual(self, market: int = 0) -> pd.DataFrame:
+        """个股异动"""
+        dfs = []
+        for page in range(100):
+            body = self._execute(build_mac_request(0x1237, struct.pack("<HH2xH2xH5H", market % 3, page * 600, 600, 1, 200, 30, 40, 50, 200)))
+            count = unpack_from("<H", body, 0, "unusual count")[0]
+            results = []
+            for i in range(count):
+                offset = 2 + i * 32
+                if offset + 32 > len(body):
+                    break
+                market, code_raw, _, unusual_type, _, index, _z = unpack_from("<H6sBBBHH", body, offset, f"unusual record[{i}]")
+                data = body[offset + 15: offset + 28]
+                desc = val = ''
+                if len(data) >= 13:
+                    v1, v2, v3, v4 = struct.unpack_from("<B2fI", data)
+                    if unusual_type == 0x03:
+                        desc = f"主力{'买入' if v1 == 0x00 else '卖出'}"
+                        val = f"{v2:.2f}/{v3:.2f}"
+                    elif unusual_type == 0x04:
+                        desc = "加速拉升"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x05:
+                        desc = "加速下跌"
+                        val = ""
+                    elif unusual_type == 0x06:
+                        desc = "低位反弹"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x07:
+                        desc = "高位回落"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x08:
+                        desc = "撑杆跳高"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x09:
+                        desc = "平台跳水"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x0A:
+                        desc = f"单笔冲{'跌' if v2 < 0 else '涨'}"
+                        val = f"{v2 * 100:.2f}%"
+                    elif unusual_type == 0x0B:
+                        direction = "平" if v3 == 0 else "跌" if v3 < 0 else "涨"
+                        desc = f"区间放量{direction}"
+                        val = f"{v2:.1f}倍" + ("" if v3 == 0 else f"{v3 * 100:.2f}%")
+                    elif unusual_type == 0x0C:
+                        desc = "区间缩量"
+                        val = ""
+                    elif unusual_type == 0x10:
+                        desc = "大单托盘"
+                        val = f"{v4:.2f}/{v3:.2f}"
+                    elif unusual_type == 0x11:
+                        desc = "大单压盘"
+                        val = f"{v2:.2f}/{v3:.2f}"
+                    elif unusual_type == 0x12:
+                        desc = "大单锁盘"
+                        val = ""
+                    elif unusual_type == 0x13:
+                        desc = "竞价试买"
+                        val = f"{v2:.2f}/{v3:.2f}"
+                    elif unusual_type == 0x14:
+                        direction = "涨" if v1 == 0x00 else "跌"
+                        if len(data) >= 10:
+                            sub_type, v2_alt, v3_alt = struct.unpack_from("<Bff", data, 1)
+                        else:
+                            sub_type, v2_alt, v3_alt = 0, 0.0, 0.0
+                        if sub_type == 0x01:
+                            desc = f"逼近{direction}停"
+                        elif sub_type == 0x02:
+                            desc = f"封{direction}停板"
+                        elif sub_type == 0x04:
+                            desc = f"封{direction}大减"
+                        elif sub_type == 0x05:
+                            desc = f"打开{direction}停"
+                        else:
+                            desc = f"涨跌停({direction})"
+                        val = f"{v2_alt:.2f}/{v3_alt:.2f}"
+                    else:
+                        desc = f"异动类型{unusual_type:#04x}"
+                        val = ""
+                hour, minute_sec = unpack_from("<BH", body, offset + 29, f"unusual time[{i}]")
+                results.append(Dot(index=index, market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name="", time=Time(hour, minute_sec // 100, minute_sec % 100), desc=desc, value=val, unusual_type=unusual_type))
+            binary_length = 2 + count * 32
+            text_bytes = body[binary_length:]
+            text_list = text_bytes.decode("gbk", errors="ignore").strip(",").split(",")
+            dfs.extend([dict(index=item.index, market=item.market, code=item.code, name=text_list[i] if i < len(text_list) else "", time=item.time, desc=item.desc, value=item.value, unusual_type=item.unusual_type) for i, item in enumerate(results)])
+            if len(results) < 600:
+                break
+        return pd.DataFrame(dfs)
 
     def get_server_info(self) -> pd.DataFrame:
         """获取服务器交易时段信息。"""
@@ -4720,33 +4458,67 @@ class TdxClient(Client):
         """获取最新财务数据。"""
         return _to_df(self._execute(GetFinanceInfoCmd(market, code)))
 
-    def get_company_info_category(self, market: Market, code: str) -> pd.DataFrame:
+    def get_company_info_category(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取公司信息文件目录。"""
-        return _to_df(self._execute(GetCompanyInfoCategoryCmd(market, code)))
+        pkg = bytes.fromhex("0c0f109b00010e000e00cf02".replace(" ", "")) + struct.pack("<H6sI", int(market), code.encode('utf8'), 0)
+        body = self._execute(pkg)
+        num = unpack_from("<H", body, 0, "company_info_category header")[0]
+        pos = 2
+        results = []
+        _RECORD_SIZE = 152
+        for _ in range(num):
+            raw = slice_bytes(body, pos, _RECORD_SIZE, "company_info_category record")
+            name_b, filename_b, start, length = struct.unpack("<64s80sII", raw)
+            pos += _RECORD_SIZE
+            nul = name_b.find(b"\x00")
+            results.append(dict(name=(name_b[:nul] if nul != -1 else name_b).decode("gbk", errors="replace"), filename=f'{code}.txt', start=start, length=length))
+        return pd.DataFrame(results)
 
     def get_company_info_content(self, market: Market, code: str, filename: str, offset: int, length: int) -> str:
         """读取公司信息文本。"""
         return self._execute(GetCompanyInfoContentCmd(market, code, filename, offset, length))
 
-    def get_block_info(self, filename: str) -> pd.DataFrame:
-        """获取并解析板块文件（行业、概念、风格等）。
-
-        常用文件名：
-          'block_zs.dat'  - 行业/指数板块
-          'block_gn.dat'  - 概念板块
-          'block_fg.dat'  - 风格板块
-        """
-        size, _hash = self._execute(GetBlockInfoMetaCmd(filename))
-        full_data = bytearray()
-        pos = 0
-        chunk_size = 30000
-        while pos < size:
-            chunk = self._execute(GetBlockInfoCmd(filename, pos, chunk_size))
-            if not chunk:
-                break
-            full_data.extend(chunk)
-            pos += len(chunk)
-        return _to_df(parse_block_dat(bytes(full_data), filename))
+    def get_block_info(self) -> pd.DataFrame:
+        """获取并解析板块文件（行业、概念、风格等   """
+        results = []
+        for name in ['zs', 'gn', 'fg']:
+            name = f'block_{name}.dat'
+            body = self._execute(bytes.fromhex("0c39186900012a002a00c502") + (name.encode("ascii") + b"\x00" * 40)[:40])
+            size, _, hash_b, _ = struct.unpack("<I1s32s1s", body[:38])
+            full_data = bytearray()
+            pos = 0
+            chunk_size = 30000
+            while pos < size:
+                pkg = bytes.fromhex("0c37186a00016e006e00b906") + struct.pack("<II", pos, chunk_size) + (name.encode("ascii") + b"\x00" * 100)[:100]
+                body = self._execute(pkg)
+                if len(body) < 4:
+                    break
+                full_data.extend(body[4:])
+                pos += len(body[4:])
+            data = bytes(full_data)
+            if len(data) < 386:
+                continue
+            pos = 384
+            count = struct.unpack("<H", data[pos: pos + 2])[0]
+            pos += 2
+            for _ in range(count):
+                if len(data) < pos + 2813:
+                    break
+                name_b = data[pos: pos + 9]
+                stock_count, _type = struct.unpack("<HH", data[pos + 9: pos + 13])
+                name = name_b.decode("gbk", errors="replace").strip("\x00")
+                codes: list[str] = []
+                codes_start = pos + 13
+                actual_count = min(stock_count, 400)
+                for i in range(actual_count):
+                    c_start = codes_start + i * 7
+                    c_raw = data[c_start: c_start + 7]
+                    code = c_raw.decode("ascii", errors="replace").strip("\x00")
+                    if code:
+                        codes.append(code)
+                results.append(dict(name=name, count=stock_count, codes=codes))
+                pos += 2813
+        return pd.DataFrame(results)
 
     def get_report_file(self, filename: str) -> bytes:
         """从服务器拉取大文件（如 'base_info.zip'）。"""
@@ -5101,8 +4873,7 @@ class MacExClient(Client):
             字段选择，默认 PresetField.COMMON。
         """
         cmd = SymbolQuotesCmd(stocks, fields)
-        result: list[MacQuoteField] = self._execute(cmd)
-        return _quotes_to_df(result)
+        return self._parse_quotes(self._execute(cmd))
 
     def goods_quotes_list(self, market: ExMarket, start: int = 0, count: int = 80) -> pd.DataFrame:
         """获取扩展市场排序报价列表（通过 GoodsList + Quotes 组合） 先获取商品列表，再批量查询报价 """
@@ -5114,8 +4885,7 @@ class MacExClient(Client):
         for _, row in items_df.iterrows():
             stocks.append((market, row["code"]))
         cmd = SymbolQuotesCmd(stocks)
-        result: list[MacQuoteField] = self._execute(cmd)
-        return _quotes_to_df(result)
+        return self._parse_quotes(self._execute(cmd))
 
     def goods_kline(self, market: int, code: str, period: Period = Period.DAILY, start: int = 0, count: int = 800, adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
         """获取扩展市场 K 线数据（支持复权）。
@@ -5175,8 +4945,10 @@ class MacExClient(Client):
 
 
 if __name__ == '__main__':
-    with MacClient() as c:
+    with TdxClient() as c:
         # 批量报价（最多 80 只/次）
+        us = c.get_company_info_category()
+        print('us')
         df = c.get_stock_quotes([(Market.SH, "600519"), (Market.SZ, "000858")])
         # 市场分类排序报价
         df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
