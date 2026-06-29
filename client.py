@@ -4957,7 +4957,7 @@ class ExTdxClient(Client):
         self._conn = ExTdxConnection(self._host)
 
     @classmethod
-    def from_best_host(cls, hosts: list, port=7709, pkg=None):
+    def from_best_host(cls, hosts: list = None, port=7709, pkg=None):
         super(ExTdxClient, cls).from_best_host(config.get("ex_hosts"), 7727, bytes.fromhex("01 03 48 66 00 01 02 00 02 00 f0 23"))
 
     def get_markets(self) -> list[ExMarketInfo]:
@@ -5016,7 +5016,7 @@ class MacExClient(Client):
         self._conn = ExTdxConnection(self._host, mac_ex_mode=True)
 
     @classmethod
-    def from_best_host(cls, hosts: list, port=7709, pkg=None):
+    def from_best_host(cls, hosts: list = None, port=7709, pkg=None):
         super(MacExClient, cls).from_best_host(config.get("mac_ex_hosts"), 7727, bytes.fromhex("01 03 48 66 00 01 02 00 02 00 f0 23"))
 
     def goods_count(self, market: int = None) -> int:
