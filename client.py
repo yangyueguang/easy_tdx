@@ -3125,20 +3125,9 @@ class SymbolInfoCmd(BaseCommand):
 
 
 class SymbolQuotesCmd(BaseCommand):
-    """批量获取自定义字段报价。
-
-    Args:
-        stocks: [(market, code), ...] 列表。
-        fields: 字段选择，默认 PresetField.COMMON。
-    """
-
-    def __init__(self, stocks: list[tuple[int, str]], fields = None):
-        if not stocks:
-            raise ValueError("stocks 不能为空")
+    def __init__(self, stocks: list[tuple[int, str]], fields=None):
         self._stocks = stocks
-        fields = fields or PresetField.COMMON
-        self._fields = fields
-        self._bitmap = bytes(build_bitmap(fields))
+        self._bitmap = bytes(build_bitmap(fields or PresetField.COMMON))
 
     def build_request(self) -> bytes:
         body = bytearray(self._bitmap)
