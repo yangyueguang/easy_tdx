@@ -60,20 +60,6 @@ class Period(IntEnum):
     MIN_1 = 7
 
 
-class BoardType(IntEnum):
-    """板块类型。"""
-    HY = 0  # 行业一级
-    HY2 = 1  # 行业二级
-    GN = 3  # 概念
-    FG = 4  # 风格
-    DQ = 5  # 地区
-    OTHER = 6  # 其他
-    YJ_LEVEL1 = 7  # 业绩一级
-    YJ_LEVEL2 = 8  # 业绩二级
-    YJ_LEVEL3 = 9  # 业绩三级
-    ALL = 255  # 全部
-
-
 class Category(IntEnum):
     """市场分类。"""
     SH = 0  # 上证A
@@ -764,13 +750,11 @@ class MacClient(Client):
                 break
         return pd.DataFrame(results)
 
-    def get_stock_kline(self, market: int, code: str, period: Period = Period.DAILY,
-                        adjust=False) -> pd.DataFrame:
+    def get_stock_kline(self, market: int, code: str, period: Period = Period.DAILY, adjust=False) -> pd.DataFrame:
         """获取 K 线数据（自动分页，每页最多 700 条）"""
         results = []
         for page in range(10):
-            pkg = self.build_mac_request(0x122E,
-                                    struct.pack("<H22sHH I HH bbb bH4s", int(market), code.encode("gbk"), int(period), 1, page * 700, 700, int(adjust), 1, 1, 0, 1, 0, b""))
+            pkg = self.build_mac_request(0x122E, struct.pack("<H22sHH I HH bbb bH4s", int(market), code.encode("gbk"), int(period), 1, page * 700, 700, int(adjust), 1, 1, 0, 1, 0, b""))
             body = self._execute(pkg)
             (category_flag, _flag, count, start) = struct.unpack_from("<HBHI", body, 24)
             count = min(count, (len(body) - 33) // 36)
@@ -898,32 +882,6 @@ class MacClient(Client):
                     momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume,
                     outside_volume=outside_volume, turnover=turnover, avg=avg)
 
-    def get_board_list(self, board_type: BoardType = BoardType.ALL) -> pd.DataFrame:
-        """获取板块列表（自动分页） """
-        results = []
-        for page in range(100):
-            pkg = self.build_mac_request(0x1231, struct.pack("<HHBBHH8x", 150, int(board_type), 0, 0, page * 150, 1))
-            body = self._execute(pkg)
-            count_all, total = struct.unpack_from("<HH", body, 0)
-            count = count_all // 2
-            _RECORD_FMT = "<H6s16s44sfffH6s16s44sfff"
-            _RECORD_SIZE = struct.calcsize(_RECORD_FMT)  # 160
-            for i in range(count):
-                offset = 4 + i * _RECORD_SIZE
-                (market, code_raw, _pad1, name_raw, price, rise_speed, pre_close, symbol_market, symbol_code_raw,
-                 _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = struct.unpack_from(_RECORD_FMT, body, offset)
-                results.append(
-                    dict(market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                         name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), price=price,
-                         rise_speed=rise_speed, pre_close=pre_close, symbol_market=symbol_market,
-                         symbol_code=symbol_code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                         symbol_name=symbol_name_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                         symbol_price=symbol_price, symbol_rise_speed=symbol_rise_speed,
-                         symbol_pre_close=symbol_pre_close))
-            if count < 150:
-                break
-        return pd.DataFrame(results)
-
     def get_belong_board(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股所属板块列表"""
         pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", market, code.encode("gbk"), b"Stock_GLHQ"),
@@ -978,84 +936,6 @@ class MacClient(Client):
             "vol": int(df["vol"].sum()) if "vol" in df.columns else 0,
             "main_net_amount": float(sums.get("main_net_amount", 0.0)), "up_count": up_count, "down_count": down_count,
             "members": df}
-
-    def get_board_ranking(self, board_type: BoardType = BoardType.HY, top_n: int = 50, sort_by: str = "change_pct",
-                          ascending: bool = False) -> pd.DataFrame:
-        """获取板块涨跌幅排行榜（含成交额、成交量、资金流入流出、涨跌家数）"""
-        _VALID_SORT = {"change_pct", "amount", "main_net_amount", "vol"}
-        if sort_by not in _VALID_SORT:
-            raise ValueError(f"sort_by 必须是 {_VALID_SORT} 之一， got {sort_by!r}")
-        boards_df = self.get_board_list(board_type)
-        if boards_df.empty:
-            return pd.DataFrame()
-        if "price" in boards_df.columns and "pre_close" in boards_df.columns:
-            pre = boards_df["pre_close"].replace(0, float("nan"))
-            boards_df["change_pct"] = (boards_df["price"] - boards_df["pre_close"]) / pre * 100
-        else:
-            boards_df["change_pct"] = 0.0
-        boards_df = boards_df.sort_values("change_pct", ascending=ascending).head(top_n)
-        rows: list[dict] = []
-        for _, row in boards_df.iterrows():
-            code = str(row["code"])
-            summary = self.get_board_summary(code)
-            rows.append({
-                "code": code, "name": row.get("name", ""), "change_pct": round(float(row.get("change_pct", 0.0)), 2),
-                "amount": summary["amount"], "vol": summary["vol"], "main_net_amount": summary["main_net_amount"],
-                "up_count": summary["up_count"], "down_count": summary["down_count"],
-                "member_count": summary["member_count"]})
-        result = pd.DataFrame(rows)
-        if not result.empty:
-            result = result.sort_values(sort_by, ascending=ascending).reset_index(drop=True)
-        return result
-
-    def get_board_change_ranking(self, board_type: BoardType = BoardType.HY, target_date: int = None, days: int = 20,
-                                 top_n: int = None, ascending: bool = False) -> pd.DataFrame:
-        """获取板块 N 日涨跌幅排行榜"""
-        if days < 1:
-            raise ValueError(f"days 必须 >= 1，got {days}")
-        boards_df = self.get_board_list(board_type)
-        if boards_df.empty:
-            return pd.DataFrame(columns=["code", "name", "close_end", "close_start", "change_pct"])
-        fetch_count = days + 10  # 缓冲节假日
-        target_ts: pd.Timestamp = None
-        if target_date is not None:
-            target_ts = pd.Timestamp(year=target_date // 10000, month=(target_date // 100) % 100, day=target_date % 100)
-        rows: list[dict] = []
-        for _, row in boards_df.iterrows():
-            board_code = str(row["code"])
-            board_market = int(row["market"]) if "market" in row.index else 1
-            try:
-                kline_df = self.get_stock_kline(market=board_market, code=board_code, period=Period.DAILY,
-                                                count=fetch_count, adjust=False)
-            except Exception:
-                print("板块 %s K线获取失败，跳过", board_code)
-                continue
-            if kline_df.empty or len(kline_df) < 2:
-                continue
-            kline_df = kline_df.sort_values("datetime").reset_index(drop=True)
-            if target_ts is not None:
-                mask = kline_df["datetime"] <= target_ts
-                if not mask.any():
-                    continue
-                end_pos = int(mask[mask].index[-1])
-            else:
-                end_pos = len(kline_df) - 1
-            start_pos = max(0, end_pos - days)
-            close_end = float(kline_df.loc[end_pos, "close"])
-            close_start = float(kline_df.loc[start_pos, "close"])
-            if close_start == 0:
-                continue
-            change_pct = round((close_end - close_start) / close_start * 100, 2)
-            rows.append({
-                "code": board_code, "name": row.get("name", ""), "close_end": close_end, "close_start": close_start,
-                "change_pct": change_pct, })
-        result = pd.DataFrame(rows, columns=["code", "name", "close_end", "close_start", "change_pct"])
-        if not result.empty:
-            result = result.sort_values("change_pct", ascending=ascending)
-            if top_n is not None:
-                result = result.head(top_n)
-            result = result.reset_index(drop=True)
-        return result
 
     def get_capital_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股资金流向"""
@@ -2156,5 +2036,6 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with MacClient() as c:
-        df = c.get_stock_quotes([(Market.SH, '600600'), (Market.SZ, '000001')])
+        df = c.get_board_change_ranking()
+        # df = c.get_stock_quotes([(Market.SH, '600600'), (Market.SZ, '000001')])
         print('over')
