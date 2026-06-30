@@ -562,14 +562,6 @@ class XdxrRecord:
 
 
 @dataclass
-class FinancialFileInfo:
-    """财报 zip 文件索引条目（来自 tdxfin/gpcw.txt）。"""
-    filename: str  # "gpcw20260331.zip"
-    hash: str  # MD5 hex digest
-    filesize: int  # 字节
-
-
-@dataclass
 class FinancialRecord:
     """单只股票的一期历史专业财报记录。"""
     code: str  # 6 位股票代码
@@ -1218,47 +1210,6 @@ def _to_df(data) -> pd.DataFrame:
     raise TypeError(f"不支持转换为 DataFrame 的类型: {type(data)}")
 
 
-def _merge_bar_datetime(df: pd.DataFrame, daily_plus: bool) -> pd.DataFrame:
-    """根据 K 线周期将 SecurityBar 的分散字段合并为 date 或 datetime。
-
-    Args:
-        daily_plus: True 表示日线及以上周期（DAY/WEEK/MONTH/YEAR），只保留 date；
-                    False 表示分钟线（MIN_1/5/15/30/60），保留完整 datetime。
-    """
-    if df.empty or "year" not in df.columns:
-        return df
-    date_str = (df["year"].astype(str)
-        + "-"
-        + df["month"].astype(str).str.zfill(2)
-        + "-"
-        + df["day"].astype(str).str.zfill(2))
-    if daily_plus:
-        df.insert(0, "date", pd.to_datetime(date_str))
-    else:
-        full_str = (date_str
-            + " "
-            + df["hour"].astype(str).str.zfill(2)
-            + ":"
-            + df["minute"].astype(str).str.zfill(2))
-        df.insert(0, "datetime", pd.to_datetime(full_str))
-    df.drop(columns=["year", "month", "day", "hour", "minute"], inplace=True)
-    return df
-
-
-def _merge_txn_datetime(df: pd.DataFrame, date_int: int) -> pd.DataFrame:
-    """将逐笔成交的 date + hour:minute 合并为 datetime 列。"""
-    if df.empty or "hour" not in df.columns:
-        return df
-    year = date_int // 10000
-    month = (date_int // 100) % 100
-    day = date_int % 100
-    base = pd.Timestamp(year=year, month=month, day=day)
-    offsets = pd.to_timedelta(df["hour"] * 3600 + df["minute"] * 60, unit="s")
-    df.insert(0, "datetime", base + offsets)
-    df.drop(columns=["hour", "minute"], inplace=True)
-    return df
-
-
 def require_bytes(data: bytes, pos: int, size: int, context: str):
     """确保从 pos 起至少还能读取 size 字节。"""
     if pos < 0:
@@ -1328,18 +1279,7 @@ def build_exclude_flags(exclude_flags: int = 0) -> bytes:
 
 
 def get_active_fields(bitmap_bytes: bytes) -> list[tuple[FieldBit, str]]:
-    """从响应位图解析活跃字段。
-
-    Parameters
-    ----------
-    bitmap_bytes : bytes
-        响应中的位图字节（通常 16 或 20 字节）。
-
-    Returns
-    -------
-    list[tuple[FieldBit, str]]
-        活跃字段及其格式说明符，按位序升序。
-    """
+    """从响应位图解析活跃字段    """
     bitmap_int = int.from_bytes(bitmap_bytes, "little")
     active: list[tuple[FieldBit, str]] = []
     while bitmap_int:
@@ -1350,8 +1290,6 @@ def get_active_fields(bitmap_bytes: bytes) -> list[tuple[FieldBit, str]]:
         if field is not None and isinstance(field, FieldBit):
             active.append((field, field.fmt))
     return active
-
-
 
 
 def get_datetime_day(data: bytes, pos: int) -> tuple[int, int, int, int]:
@@ -1699,25 +1637,7 @@ class BaseCommand(ABC):
 
 
 class BoardMembersQuotesCmd(BaseCommand):
-    """查询板块成分股报价。
-
-    Parameters
-    ----------
-    board_code : int
-        板块代码（如 int("881001")）。
-    sort_type : SortType
-        排序字段。
-    start : int
-        起始偏移量。
-    page_size : int
-        每页数量。
-    sort_order : SortOrder
-        排序方向。
-        请求的字段集合。
-    exclude_flags : list[FilterType]
-        排除条件列表（如排除科创板、创业板等）。
-    """
-
+    """查询板块成分股报价。    """
     def __init__(self, board_code: int, sort_type: SortType = SortType.CHANGE_PCT, start: int = 0, page_size: int = 80, sort_order: SortOrder = SortOrder.NONE, fields = PresetField.NONE, exclude_flags: list[FilterType] = None):
         self._board_code = board_code
         self._sort_type = sort_type
@@ -1728,17 +1648,11 @@ class BoardMembersQuotesCmd(BaseCommand):
         self._exclude_flags = exclude_flags or []
 
     def build_request(self) -> bytes:
-        # I:board_code, 9x padding, H:sort_type, I:start, H:page_size, B:sort_order, B:pad
         body = struct.pack("<I9xHIHBB", self._board_code, int(self._sort_type), self._start, self._page_size, int(self._sort_order), 0)
-
-        # 16 字节字段位图
         bitmap = build_bitmap(self._fields)
         body += bytes(bitmap[:16])
-
-        # 4 字节控制区: byte0=盘口, byte1=排除位, byte2=日内, byte3=控制(CTRL_EXTENDED=1)
         b1 = sum(f.value for f in self._exclude_flags)
         body += struct.pack("<BBBB", 0, b1, 0, 1)
-
         return build_mac_request(0x122C, body)
 
     def parse_response(self, body: bytes) -> list[MacQuoteField]:
@@ -1773,249 +1687,7 @@ class BoardMembersQuotesCmd(BaseCommand):
         return results
 
 
-
-
-class FileListCmd(BaseCommand):
-    """查询远程文件元信息（大小、哈希等）。
-
-    Args:
-        filename: 远程文件名（GBK 编码）。
-        offset: 文件偏移（默认 0）。
-    """
-
-    def __init__(self, filename: str, offset: int = 0):
-        self.filename = filename
-        self.offset = offset
-
-    def build_request(self) -> bytes:
-        _FILENAME_PAD = 30
-        raw_name = self.filename.encode("gbk")
-        _FILENAME_LEN = 70
-        padded = (raw_name + b"\x00" * _FILENAME_LEN)[:_FILENAME_LEN]
-        body = struct.pack("<I", self.offset) + padded + b"\x00" * _FILENAME_PAD
-        _FILELIST_MSG_ID = 0x1215
-        return build_mac_request(_FILELIST_MSG_ID, body)
-
-    def parse_response(self, body: bytes) -> FileMeta:
-        require_bytes(body, 0, 4 + 4 + 1 + 32, "FileListCmd")
-        offset, size, flag = unpack_from("<IIb", body, 0, "FileListCmd meta")
-        raw_hash = body[9:41]
-        hash_str = raw_hash.decode("ascii", errors="replace").rstrip("\x00")
-        return FileMeta(offset=offset, size=size, flag=flag, hash=hash_str)
-
-
-class FileDownloadCmd(BaseCommand):
-    """分段下载远程文件内容。
-
-    Args:
-        filename: 远程文件名（GBK 编码）。
-        index: 分段序号（1-based）。
-        offset: 字节偏移。
-        size: 请求块大小（默认 30000）。
-    """
-
-    def __init__(self, filename: str, index: int = 1, offset: int = 0, size: int = 30000):
-        self.filename = filename
-        self.index = index
-        self.offset = offset
-        self.size = size
-
-    def build_request(self) -> bytes:
-        raw_name = self.filename.encode("gbk")
-        _FILENAME_LEN = 70
-        _FILENAME_PAD = 30
-        padded = (raw_name + b"\x00" * _FILENAME_LEN)[:_FILENAME_LEN]
-        body = (struct.pack("<III", self.index, self.offset, self.size)
-            + padded
-            + b"\x00" * _FILENAME_PAD)
-        _FILEDL_MSG_ID = 0x1217
-        return build_mac_request(_FILEDL_MSG_ID, body)
-
-    def parse_response(self, body: bytes) -> bytes:
-        if len(body) < 8:
-            return b""
-        return body[8:]
-
-
-class GoodsListCmd(BaseCommand):
-    """获取扩展市场（期货/期权等）商品列表。
-
-    Args:
-        market: 扩展市场代码（ExMarket 枚举值）。
-        start: 起始偏移（默认 0）。
-        count: 请求数量（最大 1000，默认 600）。
-    """
-
-    def __init__(self, market: int, start: int = 0, count: int = 600):
-        if count > 1000:
-            raise ValueError(f"count 不能超过 1000，当前: {count}")
-        self.market = market
-        self.start = start
-        self.count = count
-        self.total: int = 0
-
-    def build_request(self) -> bytes:
-        body = struct.pack("<HII", self.market, self.start, self.count)
-        return build_mac_request(0x2562, body)
-
-    def parse_response(self, body: bytes) -> list[GoodsItem]:
-        _RECORD_SIZE = 48
-        _RECORD_FMT = "<H23sHIBfffHH"
-        require_bytes(body, 0, 2, "GoodsListCmd header")
-        (total,) = unpack_from("<H", body, 0, "GoodsListCmd total")
-        self.total = total
-        items: list[GoodsItem] = []
-        for i in range(total):
-            offset = 2 + i * _RECORD_SIZE
-            require_bytes(body, offset, _RECORD_SIZE, f"GoodsListCmd record[{i}]")
-            category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(_RECORD_FMT, body, offset, f"GoodsListCmd record[{i}]")
-            name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
-            items.append(GoodsItem(name=name, category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1, c2=c2))
-        return items
-
-
-class KlineOffsetCmd(BaseCommand):
-    """查询K线数据偏移。
-
-    Parameters
-    ----------
-    offset : int
-        偏移量（必须为 0）。
-    count : int
-        请求数量。
-    """
-
-    def __init__(self, offset: int = 0, count: int = 128000):
-        self._offset = offset
-        self._count = count
-
-    def build_request(self) -> bytes:
-        # I:offset, I:count, 5 bytes padding
-        body = struct.pack("<II5x", self._offset, self._count)
-        return build_mac_request(0x124A, body)
-
-    def parse_response(self, body: bytes) -> KlineOffsetInfo:
-        if len(body) < 8:
-            return KlineOffsetInfo(total=0, returned=0)
-
-        # total 字段为大端序!
-        total = struct.unpack(">I", body[:4])[0]
-        returned = struct.unpack("<I", body[4:8])[0]
-
-        return KlineOffsetInfo(total=total, returned=returned)
-
-
-class ServerInfoCmd(BaseCommand):
-    """查询服务器交易时段信息。"""
-
-    def build_request(self) -> bytes:
-        # 固定 68 字节请求体
-        header = bytes.fromhex("04002d31")
-        body = header + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52
-        return build_mac_request(0x120F, body)
-
-    def parse_response(self, body: bytes) -> ServerSession:
-        if len(body) < 87:
-            return ServerSession(today="", last_trading_day="")
-
-        pos = 0
-        _count = unpack_from("<H", body, pos, "server_info count")[0]
-        pos += 2
-        # 8 bytes flags
-        pos += 8
-        # 3 bytes tag ("-1")
-        pos += 3
-        # 9 bytes reserved
-        pos += 9
-
-        def _parse_date(p: int) -> tuple[str, int]:
-            d = unpack_from("<I", body, p, "server_info date")[0]
-            return f"{d // 10000}-{d % 10000 // 100:02d}-{d % 100:02d}", p + 4
-
-        def _parse_session(p: int) -> tuple[list[dict[str, object]], int]:
-            vals = unpack_from("<8H", body, p, "server_info session")
-            sessions: list[dict[str, object]] = []
-            for i in range(0, 8, 2):
-                sessions.append({
-                        "open": f"{vals[i] // 60}:{vals[i] % 60:02d}", "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}", })
-            return sessions, p + 16
-
-        today, pos = _parse_date(pos)
-        pos += 4  # ts1
-
-        sessions_1, pos = _parse_session(pos)
-        sessions_2, pos = _parse_session(pos)
-
-        pos += 1  # flag byte
-
-        last_trading_day, pos = _parse_date(pos)
-        pos += 4  # ts2
-
-        # Skip remaining fields
-        market_param_1 = 0
-        market_param_2 = 0
-        if pos + 8 <= len(body):
-            market_param_1 = unpack_from("<I", body, pos, "server_info param1")[0]
-            pos += 4
-            market_param_2 = unpack_from("<I", body, pos, "server_info param2")[0]
-
-        return ServerSession(today=today, last_trading_day=last_trading_day, sessions_1=sessions_1, sessions_2=sessions_2, market_param_1=market_param_1, market_param_2=market_param_2)
-
-
-class SymbolAuctionCmd(BaseCommand):
-    """查询集合竞价数据。
-
-    Parameters
-    ----------
-    market : int
-        市场代码。
-    code : str
-        证券代码。
-    start : int
-        起始偏移量。
-    count : int
-        请求数量。
-    """
-
-    def __init__(self, market: int, code: str, start: int = 0, count: int = 500):
-        self._market = market
-        self._code = code
-        self._start = start
-        self._count = count
-
-    def build_request(self) -> bytes:
-        # H: market, 22s: code in GBK, I: start, I: count, 10 bytes padding
-        body = struct.pack("<H22sII10x", self._market, self._code.encode("gbk"), self._start, self._count)
-        return build_mac_request(0x123D, body)
-
-    def parse_response(self, body: bytes) -> list[AuctionItem]:
-        # 响应头: H:market, 22s:code, I:count, 8 bytes padding (zeros)
-        _market, _code, count = unpack_from("<H22sI", body, 0, "auction header")
-
-        items: list[AuctionItem] = []
-        for i in range(count):
-            offset = 36 + i * 16
-            if offset + 16 > len(body):
-                break
-            time_sec, price, matched, unmatched = unpack_from("<IfIi", body, offset, f"auction item[{i}]")
-
-            items.append(AuctionItem(time=time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60), price=price, matched=matched, unmatched=unmatched))
-
-        return items
-
-
 class SymbolBarCmd(BaseCommand):
-    """获取单只股票的 K 线数据。
-
-    Args:
-        market: 市场代码。
-        code:   6 位股票代码。
-        period: K 线周期。
-        times:  周期倍数（Period.MINS / Period.DAYS 时有效）。
-        start:  起始偏移（0 = 最新）。
-        count:  返回条数。
-        fq:     复权方式。
-    """
 
     def __init__(self, market: int, code: str, period: Period = Period.DAILY, times: int = 1, start: int = 0, count: int = 700, fq: Adjust = Adjust.NONE):
         self._market = market
@@ -2051,7 +1723,6 @@ class SymbolBarCmd(BaseCommand):
             (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from("<II7f", body, offset, f"symbol_bar bar[{i}]")
             if ymd < 19900101 or ymd > 20991231:
                 continue
-
             year = ymd // 10000
             month = (ymd % 10000) // 100
             day = ymd % 100
@@ -2065,140 +1736,6 @@ class SymbolBarCmd(BaseCommand):
         return results
 
 
-class SymbolBelongBoardCmd(BaseCommand):
-    """查询个股所属板块。
-
-    Parameters
-    ----------
-    market : int
-        市场代码。
-    code : str
-        证券代码。
-    """
-
-    def __init__(self, market: int, code: str):
-        self._market = market
-        self._code = code
-
-    def build_request(self) -> bytes:
-        # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_GLHQ"
-        body = struct.pack("<H8s16x21s", self._market, self._code.encode("gbk"), b"Stock_GLHQ")
-        # head=1 用于区分 symbol_belong_board 与 symbol_capital_flow (head=2)
-        return build_mac_request(0x1218, body, head_flag=1)
-
-    def parse_response(self, body: bytes) -> list[BelongBoardInfo]:
-        # 响应头: H:market, 12s:query_info, 5x padding, 8s:ext = 27 bytes
-        if len(body) < 27:
-            return []
-
-        json_bytes = body[27:]
-        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk", errors="replace"))
-
-        results: list[BelongBoardInfo] = []
-        if not python_list:
-            return results
-
-        def _to_float(value: object) -> float:
-            try:
-                return float(value)  # type: ignore[arg-type]
-            except (ValueError, TypeError):
-                return 0.0
-        for row in python_list:
-            n = len(row)
-            if n not in (9, 13):
-                continue
-            try:
-
-                bt = int(row[0])
-                mkt = int(row[1])
-            except (ValueError, TypeError):
-                bt = mkt = 0
-            board_code = str(row[2])
-            board_name = str(row[3])
-            close = _to_float(row[4]) if n > 4 and row[4] else 0.0
-            pre_close = _to_float(row[5]) if n > 5 and row[5] else 0.0
-
-            results.append(BelongBoardInfo(board_type=bt, market=mkt, board_code=board_code, board_name=board_name, close=close, pre_close=pre_close))
-
-        return results
-
-
-class SymbolCapitalFlowCmd(BaseCommand):
-    """查询个股资金流向。
-
-    Parameters
-    ----------
-    market : int
-        市场代码。
-    code : str
-        证券代码。
-    """
-
-    def __init__(self, market: int, code: str):
-        self._market = market
-        self._code = code
-
-    def build_request(self) -> bytes:
-        # H:market, 8s:code padded with spaces, 16s:padding, 21s:"Stock_ZJLX"
-        body = struct.pack("<H8s16x21s", self._market, self._code.encode("gbk"), b"Stock_ZJLX")
-        # head=2 用于区分 symbol_capital_flow 与 symbol_belong_board (head=1)
-        _HEAD_FLAG = 2
-        return build_mac_request(0x1218, body, head_flag=_HEAD_FLAG)
-
-    def parse_response(self, body: bytes) -> CapitalFlowData:
-        # 响应头: H:market, 12s:query_info, 5x padding, 8s:ext = 27 bytes
-        if len(body) < 27:
-            return None
-
-        json_bytes = body[27:]
-        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk"))
-
-        if len(python_list) < 2:
-            return None
-
-        today_data = python_list[0]
-        five_days_data = python_list[1]
-
-        def _to_float(value: object) -> float:
-            try:
-                return float(value)  # type: ignore[arg-type]
-            except (ValueError, TypeError):
-                return 0.0
-        main_in = _to_float(today_data[0]) if len(today_data) > 0 else 0.0
-        main_out = _to_float(today_data[1]) if len(today_data) > 1 else 0.0
-        retail_in = _to_float(today_data[2]) if len(today_data) > 2 else 0.0
-        retail_out = _to_float(today_data[3]) if len(today_data) > 3 else 0.0
-
-        mid_net_5d = _to_float(five_days_data[4]) if len(five_days_data) > 4 else 0.0
-        large_net_5d = _to_float(five_days_data[3]) if len(five_days_data) > 3 else 0.0
-
-        return CapitalFlowData(date="", main_in=main_in, main_out=main_out, main_net=main_in - main_out, small_in=retail_in, small_out=retail_out, small_net=retail_in - retail_out, mid_in=0.0, mid_out=0.0, mid_net=mid_net_5d, large_in=0.0, large_out=0.0, large_net=large_net_5d)
-
-
-class SymbolInfoCmd(BaseCommand):
-    """获取个股简要特征。
-
-    Args:
-        market: 市场代码。
-        code:   6 位股票代码。
-    """
-
-    def __init__(self, market: int, code: str):
-        self._market = market
-        self._code = code
-
-    def build_request(self) -> bytes:
-        body = struct.pack("<H22sI12x", self._market, self._code.encode("gbk"), 1)
-        return build_mac_request(0x122A, body)
-
-    def parse_response(self, body: bytes) -> MacSymbolInfo:
-        (market, code_raw, name_raw) = unpack_from("<H22s44s", body, 8, "symbol_info identity")
-        (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume, outside_volume) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
-        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from("<HIf20xI3f", body, 148, "symbol_info extra")
-        dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000, (time_raw % 10000) // 100, time_raw % 100)
-        return MacSymbolInfo(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), time=dt, activity=activity, pre_close=pre_close, open=open, high=high, low=low, close=close, momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume, outside_volume=outside_volume, turnover=turnover, avg=avg)
-
-
 class SymbolQuotesCmd(BaseCommand):
     def __init__(self, stocks: list[tuple[int, str]], fields=None):
         self._stocks = stocks
@@ -2210,222 +1747,6 @@ class SymbolQuotesCmd(BaseCommand):
         for market, code in self._stocks:
             body += struct.pack("<H22s", market, code.encode("gbk"))
         return build_mac_request(0x122B, bytes(body))
-
-
-
-class SymbolTickChartCmd(BaseCommand):
-    """获取单日分时图。
-
-    Args:
-        market:    市场代码。
-        code:      6 位股票代码。
-        query_date: 查询日期（None 或 date(0,0,0) 表示今天）。
-    """
-
-    def __init__(self, market: int, code: str, query_date = None):
-        self._market = market
-        self._code = code
-        if query_date is not None:
-            self._ymd = query_date.year * 10000 + query_date.month * 100 + query_date.day
-        else:
-            self._ymd = 0
-
-    def build_request(self) -> bytes:
-        body = struct.pack("<H22sI5H", self._market, self._code.encode("gbk"), self._ymd, 1, 0, 0, 0, 0)
-        return build_mac_request(0x122D, body)
-
-    def parse_response(self, body: bytes) -> MacTickChart:
-        # 头部: market(2) + code(22) + query_date(4) + reserved(1) + ref_price(4) + count(2)
-        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0, "tick_chart header")
-
-        ticks: list[MacTick] = []
-        for i in range(count):
-            offset = 35 + i * 18
-            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
-            ticks.append(MacTick(time=time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
-
-        # 尾部元数据
-        tail_offset = 35 + count * 18
-        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close, _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
-
-        return MacTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol), amount=amount, turnover=turnover, avg=avg_tail, charts=ticks)
-
-
-class SymbolTransactionCmd(BaseCommand):
-    """获取逐笔成交数据。
-
-    Args:
-        market:     市场代码。
-        code:       6 位股票代码。
-        query_date: 查询日期（None 表示今天）。
-        start:      起始偏移。
-        count:      返回条数。
-    """
-
-    def __init__(self, market: int, code: str, query_date = None, start: int = 0, count: int = 1000):
-        self._market = market
-        self._code = code
-        if query_date is not None:
-            self._ymd = query_date.year * 10000 + query_date.month * 100 + query_date.day
-        else:
-            self._ymd = 0
-        self._start = start
-        self._count = count
-
-    def build_request(self) -> bytes:
-        body = struct.pack("<H22sIIH10x", self._market, self._code.encode("gbk"), self._ymd, self._start, self._count)
-        return build_mac_request(0x122F, body)
-
-    def parse_response(self, body: bytes) -> list[MacTransaction]:
-        # 头部: market(2) + code(22) + query_date(4) + flag(1) + count(2) + start(4) + total(4) = 39
-        (count,) = unpack_from("<H", body, 29, "transaction count")
-
-        results: list[MacTransaction] = []
-        for i in range(count):
-            offset = 39 + i * 18
-            (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset, f"transaction item[{i}]")
-            results.append(MacTransaction(time=time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price, vol=volume, trade_count=trade_count, bs_flag=bs_flag))
-
-        return results
-
-
-class TickChartsCmd(BaseCommand):
-    """获取多日分时图。
-
-    Args:
-        market:     市场代码。
-        code:       6 位股票代码。
-        start_date: 起始日期（None 表示从最新交易日开始）。
-        days:       天数（最多 5）。
-    """
-
-    def __init__(self, market: int, code: str, start_date = None, days: int = 5):
-        self._market = market
-        self._code = code
-        if start_date is not None:
-            self._start_ymd = start_date.year * 10000 + start_date.month * 100 + start_date.day
-        else:
-            self._start_ymd = 0
-        self._days = days
-
-    def build_request(self) -> bytes:
-        body = struct.pack("<H22sIHH6x", self._market, self._code.encode("gbk"), self._start_ymd, self._days, 1)
-        return build_mac_request(0x123E, body)
-
-    def parse_response(self, body: bytes) -> MacMultiTickChart:
-        # 头部
-        (market, code_raw) = unpack_from("<H22s", body, 0, "tick_charts header")
-
-        # 每日日期(5 x I) + 每日前收(5 x f) = 40 bytes
-        date_ints = unpack_from("<5I", body, 24, "tick_charts dates")
-        pre_close_floats = unpack_from("<5f", body, 44, "tick_charts pre_closes")
-
-        # count(2) + send_last(1) + page_size(2) + total(2)
-        (count, send_last, page_size, total) = unpack_from("<HBHH", body, 64, "tick_charts header2")
-
-        days: list[MacMultiTickDay] = []
-        for d in range(count):
-            ticks: list[MacTick] = []
-            for t in range(page_size):
-                index = d * page_size + t
-                offset = 71 + index * 14
-                (minutes, price, avg, vol, tick_reserved) = unpack_from("<HffHH", body, offset, f"tick_charts tick[{d}][{t}]")
-                ticks.append(MacTick(time=time(minutes // 60, minutes % 60), price=price, avg=avg, vol=vol))
-
-            ymd = date_ints[d]
-            day_date = date_cls(ymd // 10000, (ymd % 10000) // 100, ymd % 100)
-            days.append(MacMultiTickDay(date=day_date, pre_close=pre_close_floats[d], ticks=ticks))
-
-        # 尾部元数据
-        tail_offset = 71 + count * page_size * 14
-        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close, _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_charts tail")
-
-        return MacMultiTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol), amount=amount, turnover=turnover, avg=avg, charts=days)
-
-
-class GetExHistoryInstrumentBarsRangeCmd(BaseCommand):
-    """按日期范围获取历史K线数据。"""
-
-    _seqid: int = 1
-
-    def __init__(self, market: int, code: str, start_date: int, end_date: int):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.start_date = start_date
-        self.end_date = end_date
-
-    def build_request(self) -> bytes:
-        pkg = bytearray.fromhex("01")
-        pkg.extend(struct.pack("<B", self._seqid))
-        self.__class__._seqid += 1
-        pkg.extend(bytearray.fromhex("38 92 00 01 16 00 16 00 0D 24"))
-        pkg.extend(struct.pack("<B9s", self.market, self.code))
-        pkg.extend(bytearray.fromhex("07 00"))
-        pkg.extend(struct.pack("<II", self.start_date, self.end_date))
-        return bytes(pkg)
-
-    @staticmethod
-    def _parse_date(num: int) -> tuple[int, int, int]:
-        year = num // 2048 + 2004
-        month = (num % 2048) // 100
-        day = (num % 2048) % 100
-        return year, month, day
-
-    @staticmethod
-    def _parse_time(num: int) -> tuple[int, int]:
-        return num // 60, num % 60
-
-    def parse_response(self, body: bytes) -> list[ExInstrumentBar]:
-        pos = 12  # skip 12-byte header
-        if pos + 2 > len(body):
-            return []
-        (ret_count,) = struct.unpack("<H", body[pos : pos + 2])
-        pos += 2
-        results: list[ExInstrumentBar] = []
-        for _ in range(ret_count):
-            if pos + 32 > len(body):
-                break
-            record_start = pos
-            (d1, d2, open_p, high, low, close_p, position, trade, settlement) = struct.unpack("<HHffffIIf", body[pos : pos + 32])
-            pos += 32
-            year, month, day = self._parse_date(d1)
-            hour, minute = self._parse_time(d2)
-            results.append(ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade, amount=settlement, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
-        return results
-
-
-class GetExInstrumentBarsCmd(BaseCommand):
-    """获取K线数据（扩展行情版本，支持期货/港股等）。"""
-
-    def __init__(self, category: int, market: int, code: str, start: int = 0, count: int = 700):
-        self.category = category
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 01 08 6a 01 01 16 00 16 00 ff 23")
-        return header + struct.pack("<B9sHHIH", self.market, self.code, self.category, 1, self.start, self.count)
-
-    def parse_response(self, body: bytes) -> list[ExInstrumentBar]:
-        pos = 18  # skip 18-byte header
-        if pos + 2 > len(body):
-            return []
-        (ret_count,) = struct.unpack("<H", body[pos : pos + 2])
-        pos += 2
-        results: list[ExInstrumentBar] = []
-        for _ in range(ret_count):
-            record_start = pos
-            year, month, day, hour, minute, pos = get_datetime(self.category, body, pos)
-            if pos + 28 > len(body):
-                break
-            (open_p, high, low, close_p, position, trade, _price) = struct.unpack("<ffffIIf", body[pos : pos + 28])
-            (amount,) = struct.unpack("<f", body[pos + 16 : pos + 20])
-            pos += 28
-            results.append(ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade, amount=amount, year=year, month=month, day=day, hour=hour, minute=minute, _raw=body[record_start:pos]))
-        return results
-
 
 class GetExInstrumentCountCmd(BaseCommand):
     """获取扩展行情市场中商品总数。"""
@@ -2470,258 +1791,6 @@ class GetExInstrumentInfoCmd(BaseCommand):
             desc = raw_desc.decode("gbk", errors="replace").rstrip("\x00")
             results.append(ExInstrumentInfo(category=category, market=market, code=code, name=name, desc=desc, _raw=raw))
         return results
-
-
-class GetExInstrumentQuoteCmd(BaseCommand):
-    """获取单个商品的五档实时行情。"""
-
-    def __init__(self, market: int, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 01 08 02 02 01 0c 00 0c 00 fa 23")
-        return header + struct.pack("<B9s", self.market, self.code)
-
-    def parse_response(self, body: bytes) -> ExInstrumentQuote:
-        if len(body) < 150:
-            return None
-        pos = 0
-        (market, raw_code) = struct.unpack("<B9s", body[pos : pos + 10])
-        pos += 10
-        pos += 4  # skip 4 unknown bytes
-        record_start = pos - 14
-        (pre_close, open_price, high, low, price, kaicang, _unk1, zongliang, xianliang, _unk2, neipan, waipan, _unk3, chicang, b1, b2, b3, b4, b5, bv1, bv2, bv3, bv4, bv5, a1, a2, a3, a4, a5, av1, av2, av3, av4, av5) = struct.unpack("<fffffIIIIIIIIIfffffIIIIIfffffIIIII", body[pos : pos + 136])
-        code = raw_code.decode("utf-8", errors="replace").rstrip("\x00")
-        return ExInstrumentQuote(market=market, code=code, pre_close=pre_close, open=open_price, high=high, low=low, price=price, kaicang=kaicang, zongliang=zongliang, xianliang=xianliang, neipan=neipan, waipan=waipan, chicang=chicang, bid1=b1, bid2=b2, bid3=b3, bid4=b4, bid5=b5, bid_vol1=bv1, bid_vol2=bv2, bid_vol3=bv3, bid_vol4=bv4, bid_vol5=bv5, ask1=a1, ask2=a2, ask3=a3, ask4=a4, ask5=a5, ask_vol1=av1, ask_vol2=av2, ask_vol3=av3, ask_vol4=av4, ask_vol5=av5, _raw=body[record_start : pos + 136])
-
-
-class GetExInstrumentQuoteListCmd(BaseCommand):
-    """按类别获取商品行情列表（期货/港股等）。"""
-
-    def __init__(self, market: int, category: int, start: int = 0, count: int = 80):
-        self.market = market
-        self.category = category
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 c1 06 0b 00 02 0b 00 0b 00 00 24")
-        return header + struct.pack("<BHHHH", self.market, 0, self.start, self.count, 1)
-
-    def parse_response(self, body: bytes) -> list[OrderedDict[str, object]]:
-        if len(body) < 2:
-            return []
-        (num,) = struct.unpack("<H", body[0:2])
-        pos = 2
-        results: list[OrderedDict[str, object]] = []
-        for _ in range(num):
-            if pos + 10 > len(body):
-                break
-            (market, raw_code) = struct.unpack("<B9s", body[pos : pos + 10])
-            code = raw_code.strip(b"\x00").decode("gbk", errors="replace")
-            pos += 10
-            if self.category == 3:
-                pos = self._parse_futures(market, code, body, pos, results)
-            elif self.category == 2:
-                pos = self._parse_hk_stocks(market, code, body, pos, results)
-            else:
-                raise Exception(f"不支持的扩展行情类别: {self.category}")
-        return results
-
-    @staticmethod
-    def _parse_futures(market: int, code: str, body: bytes, pos: int, results: list[OrderedDict[str, object]]) -> int:
-        if pos + 140 > len(body):
-            return pos + 290
-        (bi_shu, zuo_jie, jin_kai, zui_gao, zui_di, mai_chu, kai_cang, _unk1, zong_liang, xian_liang, zong_jin_e, nei_pan, wai_pan, _unk2, chi_cang_liang, mai_ru_jia, _u1, _u2, _u3, _u4, mai_ru_liang, _u5, _u6, _u7, _u8, mai_chu_jia, _u9, _u10, _u11, _u12, mai_chu_liang, _u13, _u14, _u15) = struct.unpack("<IfffffIIIIfIIfIfIIIIIIIIIfIIIIIIIII", body[pos : pos + 140])
-        pos += 290
-        results.append(OrderedDict([
-                    ("market", market), ("code", code), ("BiShu", bi_shu), ("ZuoJie", zuo_jie), ("JinKai", jin_kai), ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("MaiChu", mai_chu), ("KaiCang", kai_cang), ("ZongLiang", zong_liang), ("XianLiang", xian_liang), ("ZongJinE", zong_jin_e), ("NeiPan", nei_pan), ("WaiPan", wai_pan), ("ChiCangLiang", chi_cang_liang), ("MaiRuJia", mai_ru_jia), ("MaiRuLiang", mai_ru_liang), ("MaiChuJia", mai_chu_jia), ("MaiChuLiang", mai_chu_liang), ]))
-        return pos
-
-    @staticmethod
-    def _parse_hk_stocks(market: int, code: str, body: bytes, pos: int, results: list[OrderedDict[str, object]]) -> int:
-        if pos + 140 > len(body):
-            return pos + 290
-        (huo_yue_du, zuo_shou, jin_kai, zui_gao, zui_di, xian_jia, _unk1, mai_ru_jia, zong_liang, xian_liang, zong_jin_e, _unk2, _unk3, nei, wai, mrj1, mrj2, mrj3, mrj4, mrj5, mrl1, mrl2, mrl3, mrl4, mrl5, mcj1, mcj2, mcj3, mcj4, mcj5, mcl1, mcl2, mcl3, mcl4, mcl5) = struct.unpack("<IfffffIfIIfIIIIfffffIIIIIfffffIIIII", body[pos : pos + 140])
-        pos += 290
-        results.append(OrderedDict([
-                    ("market", market), ("code", code), ("HuoYueDu", huo_yue_du), ("ZuoShou", zuo_shou), ("JinKai", jin_kai), ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("XianJia", xian_jia), ("MaiRuJia", mai_ru_jia), ("ZongLiang", zong_liang), ("XianLiang", xian_liang), ("ZongJinE", zong_jin_e), ("Nei", nei), ("Wai", wai), ("MaiRuJia1", mrj1), ("MaiRuJia2", mrj2), ("MaiRuJia3", mrj3), ("MaiRuJia4", mrj4), ("MaiRuJia5", mrj5), ("MaiRuLiang1", mrl1), ("MaiRuLiang2", mrl2), ("MaiRuLiang3", mrl3), ("MaiRuLiang4", mrl4), ("MaiRuLiang5", mrl5), ("MaiChuJia1", mcj1), ("MaiChuJia2", mcj2), ("MaiChuJia3", mcj3), ("MaiChuJia4", mcj4), ("MaiChuJia5", mcj5), ("MaiChuLiang1", mcl1), ("MaiChuLiang2", mcl2), ("MaiChuLiang3", mcl3), ("MaiChuLiang4", mcl4), ("MaiChuLiang5", mcl5), ]))
-        return pos
-
-
-class GetExMarketsCmd(BaseCommand):
-    """获取扩展行情支持的市场列表。"""
-
-    def build_request(self) -> bytes:
-        return bytes.fromhex("01 02 48 69 00 01 02 00 02 00 f4 23")
-
-    def parse_response(self, body: bytes) -> list[ExMarketInfo]:
-        if len(body) < 2:
-            return []
-        (count,) = unpack_from("<H", body, 0, "ex markets count")
-        pos = 2
-        results: list[ExMarketInfo] = []
-        for _ in range(count):
-            if pos + 64 > len(body):
-                break
-            raw = body[pos : pos + 64]
-            (category, raw_name, market, raw_short_name) = struct.unpack("<B32sB2s", raw[:36])
-            pos += 64
-            if category == 0 and market == 0:
-                continue
-            name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
-            short_name = raw_short_name.decode("gbk", errors="replace").rstrip("\x00")
-            results.append(ExMarketInfo(market=market, category=category, name=name, short_name=short_name, _raw=raw))
-        return results
-
-
-class GetExMinuteTimeDataCmd(BaseCommand):
-    """获取当日分时行情数据。"""
-
-    def __init__(self, market: int, code: str):
-        self.market = market
-        self.code = code.encode("utf-8")
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 07 08 00 01 01 0c 00 0c 00 0b 24")
-        return header + struct.pack("<B9s", self.market, self.code)
-
-    def parse_response(self, body: bytes) -> list[ExMinuteBar]:
-        if len(body) < 12:
-            return []
-        pos = 0
-        (market, raw_code, num) = struct.unpack("<B9sH", body[pos : pos + 12])
-        pos += 12
-        return self._parse_records(body, pos, num)
-
-    @staticmethod
-    def _parse_records(body: bytes, pos: int, num: int) -> list[ExMinuteBar]:
-        results: list[ExMinuteBar] = []
-        for _ in range(num):
-            if pos + 18 > len(body):
-                break
-            record_start = pos
-            (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos : pos + 18])
-            pos += 18
-            hour = raw_time // 60
-            minute = raw_time % 60
-            results.append(ExMinuteBar(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume, open_interest=amount, _raw=body[record_start:pos]))
-        return results
-
-
-class GetExHistoryMinuteTimeDataCmd(BaseCommand):
-    """获取历史某日分时行情数据。"""
-
-    def __init__(self, market: int, code: str, date: int):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.date = date
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 01 30 00 01 01 10 00 10 00 0c 24")
-        return header + struct.pack("<IB9s", self.date, self.market, self.code)
-
-    def parse_response(self, body: bytes) -> list[ExMinuteBar]:
-        if len(body) < 20:
-            return []
-        pos = 0
-        (_market, _code, _unk, num) = struct.unpack("<B9s8sH", body[pos : pos + 20])
-        pos += 20
-        return GetExMinuteTimeDataCmd._parse_records(body, pos, num)
-
-
-class GetExTransactionDataCmd(BaseCommand):
-    """获取当日分笔成交数据。"""
-
-    def __init__(self, market: int, code: str, start: int = 0, count: int = 1800):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 01 08 00 03 01 12 00 12 00 fc 23")
-        return header + struct.pack("<B9siH", self.market, self.code, self.start, self.count)
-
-    def parse_response(self, body: bytes) -> list[ExTransactionRecord]:
-        if len(body) < 16:
-            return []
-        pos = 0
-        (_market, _code, _unk, num) = struct.unpack("<B9s4sH", body[pos : pos + 16])
-        pos += 16
-        return self._parse_records(body, pos, num)
-
-    @staticmethod
-    def _parse_records(body: bytes, pos: int, num: int) -> list[ExTransactionRecord]:
-        results: list[ExTransactionRecord] = []
-        for _ in range(num):
-            if pos + 16 > len(body):
-                break
-            record_start = pos
-            (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos : pos + 16])
-            pos += 16
-            hour = raw_time // 60
-            minute = raw_time % 60
-            second = direction % 10000
-            if second > 59:
-                second = 0
-            nature = direction // 10000
-            results.append(ExTransactionRecord(hour=hour, minute=minute, second=second, price=price, volume=volume, zengcang=zengcang, nature=nature, _raw=body[record_start:pos]))
-        return results
-
-
-class GetExHistoryTransactionDataCmd(BaseCommand):
-    """获取历史某日分笔成交数据。"""
-
-    def __init__(self, market: int, code: str, date: int, start: int = 0, count: int = 1800):
-        self.market = market
-        self.code = code.encode("utf-8")
-        self.date = date
-        self.start = start
-        self.count = count
-
-    def build_request(self) -> bytes:
-        header = bytes.fromhex("01 01 30 00 02 01 16 00 16 00 06 24")
-        return header + struct.pack("<IB9siH", self.date, self.market, self.code, self.start, self.count)
-
-    def parse_response(self, body: bytes) -> list[ExTransactionRecord]:
-        if len(body) < 16:
-            return []
-        pos = 0
-        (_market, _code, _unk, num) = struct.unpack("<B9s4sH", body[pos : pos + 16])
-        pos += 16
-        return GetExTransactionDataCmd._parse_records(body, pos, num)
-
-
-class MacExLoginCmd(BaseCommand):
-    """MAC EX 扩展行情登录命令。"""
-
-    def build_request(self) -> bytes:
-        # 80 字节 Login body，来自 opentdx 参考实现，已通过实际测试验证。
-        _LOGIN_BODY = bytes(bytearray.fromhex("e5bb1c2fafe52594"
-                "1f32c6e5d53dfb41"
-                "5b734cc9cdbf0ac9"
-                "2021bfdd1eb06d22"
-                "d008884c1611cb13"
-                "78f6abd824d899d2"
-                "1f32c6e5d53dfb41"
-                "1f32c6e5d53dfb41"
-                "a9325ac935dc0837"
-                "335a16e4ce17c1bb"))
-
-        inner = struct.pack("<H", 0x2454) + _LOGIN_BODY
-
-        # EX 协议帧头格式: head_flag(1B) + customize(4B) + version(1B) + zipsize(2B) + unzipsize(2B)
-        _EX_HEADER_FMT = "<BIBHH"
-        header = struct.pack(_EX_HEADER_FMT, 0x01, 0,  # customize
-            1,  # version
-            len(inner), len(inner))
-        return header + inner
-
-    def parse_response(self, body: bytes) -> bool:
-        # Login 响应 body 非空即视为成功
-        return len(body) >= 2
 
 
 class TdxConnection:
@@ -2874,7 +1943,9 @@ class ExTdxConnection:
             raise Exception(f"无法连接 {self.host}: {e}") from e
         self._sock = sock
         if self.mac_ex_mode:
-            self.execute(MacExLoginCmd())
+            inner = struct.pack("<H", 0x2454) + bytes(bytearray.fromhex("e5bb1c2fafe525941f32c6e5d53dfb415b734cc9cdbf0ac92021bfdd1eb06d22d008884c1611cb1378f6abd824d899d21f32c6e5d53dfb411f32c6e5d53dfb41a9325ac935dc0837335a16e4ce17c1bb"))
+            pkg = struct.pack("<BIBHH", 0x01, 0, 1, len(inner), len(inner)) + inner
+            self.execute(pkg)
 
     def close(self):
         if self._sock is not None:
@@ -2884,14 +1955,13 @@ class ExTdxConnection:
                 pass
             self._sock = None
 
-    def execute(self, cmd: "BaseCommand"):
+    def execute(self, pkg: bytes):
         """执行一条命令：发送请求，接收并解压响应，返回解析结果。"""
         with self._lock:
             if self._sock is None:
                 raise Exception("未连接，请先调用 connect()")
-            request = cmd.build_request()
-            if self.mac_ex_mode and len(request) > 0 and request[0] == 0x1C:
-                request = b"\x01" + request[1:]
+            if self.mac_ex_mode and len(pkg) > 0 and pkg[0] == 0x1C:
+                request = b"\x01" + pkg[1:]
             try:
                 self._sock.sendall(request)
                 header_buf = self._recv_exact(HEADER_SIZE)
@@ -2900,7 +1970,7 @@ class ExTdxConnection:
             except OSError as e:
                 raise Exception(f"通信错误: {e}") from e
             body = decompress_body(header, raw_body)
-            return cmd.parse_response(body)
+            return body
 
     def __enter__(self) -> "ExTdxConnection":
         self.connect()
@@ -3095,32 +2165,63 @@ class MacClient(Client):
         df = self.get_stock_kline(market, code, period=period, count=fetch_count, adjust=adjust)
         return df
 
-    def get_tick_chart(self, market: int, code: str, date: int = None) -> pd.DataFrame:
-        """获取单日分时图。
+    def get_tick_chart(self, market=Market.SH, code='600600', date: int = 0) -> pd.DataFrame:
+        """获取单日分时图。        """
+        pkg = build_mac_request(0x122D, struct.pack("<H22sI5H", int(market), code.encode("gbk"), date, 1, 0, 0, 0, 0))
+        body = self._execute(pkg)
+        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0, "tick_chart header")
+        ticks: list[MacTick] = []
+        for i in range(count):
+            offset = 35 + i * 18
+            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
+            ticks.append(MacTick(time=Time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
+        # 尾部元数据
+        tail_offset = 35 + count * 18
+        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
+         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from(
+            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
 
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-            date: 查询日期（YYYYMMDD），None 表示今天。
-        """
-        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
-        chart = self._execute(SymbolTickChartCmd(market, code, query_date))
+        chart = MacTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                            pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol),
+                            amount=amount, turnover=turnover, avg=avg_tail, charts=ticks)
         rows: list[dict] = []
         for tick in chart.charts:
             rows.append(asdict(tick))
         return pd.DataFrame(rows)
 
-    def get_tick_charts(self, market: int, code: str, date: int = None, days: int = 5) -> pd.DataFrame:
-        """获取多日分时图（最多 5 天）。
+    def get_tick_charts(self, market=Market.SH, code='600600', date: int = 20260629, days: int = 5) -> pd.DataFrame:
+        """获取多日分时图（最多 5 天）        """
+        pkg = build_mac_request(0x123E, struct.pack("<H22sIHH6x", int(market), code.encode("gbk"), date, days, 1))
+        body = self._execute(pkg)
+        (market, code_raw) = unpack_from("<H22s", body, 0, "tick_charts header")
+        date_ints = unpack_from("<5I", body, 24, "tick_charts dates")
+        pre_close_floats = unpack_from("<5f", body, 44, "tick_charts pre_closes")
+        (count, send_last, page_size, total) = unpack_from("<HBHH", body, 64, "tick_charts header2")
 
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-            date: 起始日期（YYYYMMDD），None 表示从最新交易日开始。
-            days: 天数。
-        """
-        start_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
-        chart = self._execute(TickChartsCmd(market, code, start_date, days))
+        days: list[MacMultiTickDay] = []
+        for d in range(count):
+            ticks: list[MacTick] = []
+            for t in range(page_size):
+                index = d * page_size + t
+                offset = 71 + index * 14
+                (minutes, price, avg, vol, tick_reserved) = unpack_from("<HffHH", body, offset,
+                                                                        f"tick_charts tick[{d}][{t}]")
+                ticks.append(MacTick(time=Time(min(15,minutes // 60), minutes % 60), price=price, avg=avg, vol=vol))
+            ymd = date_ints[d]
+            day_date = date_cls(ymd // 10000, (ymd % 10000) // 100, ymd % 100)
+            days.append(MacMultiTickDay(date=day_date, pre_close=pre_close_floats[d], ticks=ticks))
+        tail_offset = 71 + count * page_size * 14
+        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
+         _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI",
+                                                                                     body, tail_offset,
+                                                                                     "tick_charts tail")
+
+        chart = MacMultiTickChart(market=market,
+                                 code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                                 name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                                 pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol),
+                                 amount=amount, turnover=turnover, avg=avg, charts=days)
         rows: list[dict] = []
         for day in chart.charts:
             for tick in day.ticks:
@@ -3146,44 +2247,37 @@ class MacClient(Client):
                 prices.append(p)
         return pd.Series(prices)
 
-    def get_transactions(self, market: int, code: str, count: int = 2000, start: int = 0, date: int = None) -> pd.DataFrame:
-        """获取逐笔成交数据（自动分页）。
-
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-            count: 请求总数。
-            start: 起始偏移。
-            date: 查询日期（YYYYMMDD），None 表示今天。
-        """
-
-        query_date = (date_cls(date // 10000, (date % 10000) // 100, date % 100) if date is not None else None)
-        all_items = self._execute(SymbolTransactionCmd(market, code, query_date, start, min(count, 1000)))
-        fetched = len(all_items)
-        offset = start + fetched
-
-        while fetched < count:
-            page_size = min(count - fetched, 1000)
-            batch = self._execute(SymbolTransactionCmd(market, code, query_date, offset, page_size))
-            if not batch:
+    def get_transactions(self, market: int, code: str, count: int = 2000, start: int = 0, date: int = 0) -> pd.DataFrame:
+        """获取逐笔成交数据（自动分页 """
+        results: list[MacTransaction] = []
+        for page in range(20):
+            pkg = build_mac_request(0x122F, struct.pack("<H22sIIH10x", int(market), code.encode("gbk"), date, page * 1000, 1000))
+            body = self._execute(pkg)
+            count = unpack_from("<H", body, 29, "transaction count")[0]
+            for i in range(count):
+                offset = 39 + i * 18
+                (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset, f"transaction item[{i}]")
+                results.append(MacTransaction(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price, vol=volume, trade_count=trade_count, bs_flag=bs_flag))
+            if count < 1000:
                 break
-            all_items.extend(batch)
-            fetched += len(batch)
-            offset += len(batch)
-            if len(batch) < page_size:
-                break
+        return pd.DataFrame(results)
 
-        return _to_df(all_items)
+    def get_symbol_info(self, market=Market.SH, code='600600') -> pd.DataFrame:
+        """获取个股简要特征快照        """
+        pkg = build_mac_request(0x122A, struct.pack("<H22sI12x", int(market), code.encode("gbk"), 1))
+        body = self._execute(pkg)
+        (market, code_raw, name_raw) = unpack_from("<H22s44s", body, 8, "symbol_info identity")
+        (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume,
+         outside_volume) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
+        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from("<HIf20xI3f", body, 148, "symbol_info extra")
+        dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000,
+                      (time_raw % 10000) // 100, time_raw % 100)
+        return MacSymbolInfo(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                             name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), time=dt,
+                             activity=activity, pre_close=pre_close, open=open, high=high, low=low, close=close,
+                             momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume,
+                             outside_volume=outside_volume, turnover=turnover, avg=avg)
 
-    def get_symbol_info(self, market: int, code: str) -> pd.DataFrame:
-        """获取个股简要特征快照。
-
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-        """
-        info = self._execute(SymbolInfoCmd(market, code))
-        return _to_df(info)
 
     def get_board_list(self, board_type: BoardType = BoardType.ALL) -> pd.DataFrame:
         """获取板块列表（自动分页） """
@@ -3271,15 +2365,40 @@ class MacClient(Client):
 
         return _quotes_to_df(all_quotes)
 
-    def get_belong_board(self, market: int, code: str) -> pd.DataFrame:
+    def get_belong_board(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股所属板块列表。
 
         Args:
             market: 市场代码。
             code: 股票代码。
         """
-        items = self._execute(SymbolBelongBoardCmd(market, code))
-        return _to_df(items)
+        pkg = build_mac_request(0x1218, struct.pack("<H8s16x21s", market, code.encode("gbk"), b"Stock_GLHQ"), head_flag=1)
+        body = self._execute(pkg)
+        json_bytes = body[27:]
+        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk", errors="replace"))
+        results: list[BelongBoardInfo] = []
+        def _to_float(value: object) -> float:
+            try:
+                return float(value)  # type: ignore[arg-type]
+            except (ValueError, TypeError):
+                return 0.0
+        for row in python_list:
+            n = len(row)
+            if n not in (9, 13):
+                continue
+            try:
+                bt = int(row[0])
+                mkt = int(row[1])
+            except (ValueError, TypeError):
+                bt = mkt = 0
+            board_code = str(row[2])
+            board_name = str(row[3])
+            close = _to_float(row[4]) if n > 4 and row[4] else 0.0
+            pre_close = _to_float(row[5]) if n > 5 and row[5] else 0.0
+            results.append(
+                BelongBoardInfo(board_type=bt, market=mkt, board_code=board_code, board_name=board_name,
+                                close=close, pre_close=pre_close))
+        return pd.DataFrame(results)
 
     def get_board_summary(self, board_symbol: str, sort_type: SortType = SortType.CHANGE_PCT, sort_order: SortOrder = SortOrder.DESC) -> dict:
         """获取板块汇总：总成交金额、主力资金流向等（聚合成分股数据）。
@@ -3460,27 +2579,56 @@ class MacClient(Client):
             result = result.reset_index(drop=True)
         return result
 
-    def get_capital_flow(self, market: int, code: str) -> pd.DataFrame:
-        """获取个股资金流向。
+    def get_capital_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
+        """获取个股资金流向        """
+        pkg = build_mac_request(0x1218, struct.pack("<H8s16x21s", int(market), code.encode("gbk"), b"Stock_ZJLX"), head_flag=2)
 
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-        """
-        data = self._execute(SymbolCapitalFlowCmd(market, code))
-        if data is None:
-            return pd.DataFrame()
-        return _to_df(data)
+        body = self._execute(pkg)
+        json_bytes = body[27:]
+        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk"))
 
-    def get_auction(self, market: int, code: str) -> pd.DataFrame:
-        """获取集合竞价数据。
+        if len(python_list) < 2:
+            return None
 
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-        """
-        items = self._execute(SymbolAuctionCmd(market, code))
-        return _to_df(items)
+        today_data = python_list[0]
+        five_days_data = python_list[1]
+
+        def _to_float(value: object) -> float:
+            try:
+                return float(value)  # type: ignore[arg-type]
+            except (ValueError, TypeError):
+                return 0.0
+
+        main_in = _to_float(today_data[0]) if len(today_data) > 0 else 0.0
+        main_out = _to_float(today_data[1]) if len(today_data) > 1 else 0.0
+        retail_in = _to_float(today_data[2]) if len(today_data) > 2 else 0.0
+        retail_out = _to_float(today_data[3]) if len(today_data) > 3 else 0.0
+
+        mid_net_5d = _to_float(five_days_data[4]) if len(five_days_data) > 4 else 0.0
+        large_net_5d = _to_float(five_days_data[3]) if len(five_days_data) > 3 else 0.0
+
+        return dict(main_in=main_in, main_out=main_out, main_net=main_in - main_out,
+                               small_in=retail_in, small_out=retail_out, small_net=retail_in - retail_out,
+                               mid_in=0.0, mid_out=0.0, mid_net=mid_net_5d, large_in=0.0, large_out=0.0,
+                               large_net=large_net_5d)
+
+
+    def get_auction(self, market=Market.SH, code='600600') -> pd.DataFrame:
+        """获取集合竞价数据        """
+        items: list[AuctionItem] = []
+        for page in range(10):
+            pkg = build_mac_request(0x123D, struct.pack("<H22sII10x", int(market), code.encode("gbk"), page * 500, 500))
+            body = self._execute(pkg)
+            _market, _code, count = unpack_from("<H22sI", body, 0, "auction header")
+            for i in range(count):
+                offset = 36 + i * 16
+                if offset + 16 > len(body):
+                    break
+                time_sec, price, matched, unmatched = unpack_from("<IfIi", body, offset, f"auction item[{i}]")
+                items.append(AuctionItem(time=Time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60), price=price, matched=matched, unmatched=unmatched))
+            if count < 500:
+                break
+        return pd.DataFrame(items)
 
     def get_unusual(self, market: int = 0) -> pd.DataFrame:
         """个股异动"""
@@ -3573,77 +2721,68 @@ class MacClient(Client):
 
     def get_server_info(self) -> pd.DataFrame:
         """获取服务器交易时段信息。"""
-        info = self._execute(ServerInfoCmd())
-        return _to_df(info)
-
-    def get_kline_offset(self, offset: int = 0, count: int = 128000) -> pd.DataFrame:
-        """获取 K 线数据偏移信息。
-
-        Args:
-            offset: 偏移量。
-            count: 请求数量。
-        """
-        info = self._execute(KlineOffsetCmd(offset, count))
-        return _to_df(info)
-
-    def get_file_meta(self, filename: str) -> pd.DataFrame:
-        """查询远程文件元信息。
-
-        Args:
-            filename: 远程文件名。
-        """
-        meta = self._execute(FileListCmd(filename))
-        return _to_df(meta)
-
-    def download_file_chunk(self, filename: str, index: int, offset: int, size: int) -> bytes:
-        """下载远程文件的一个分片。
-
-        Args:
-            filename: 远程文件名。
-            index: 分段序号（1-based）。
-            offset: 字节偏移。
-            size: 请求块大小。
-        """
-        return self._execute(FileDownloadCmd(filename, index, offset, size))
-
-    def download_file(self, filename: str, filesize: int = 0) -> bytearray:
-        """下载完整远程文件。
-
-        Args:
-            filename: 远程文件名。
-            filesize: 预期文件大小（0 表示自动检测）。
-        """
-        if filesize <= 0:
-            meta = self._execute(FileListCmd(filename))
-            filesize = meta.size
-
-        full_data = bytearray()
-        chunk_size = 30000
+        pkg = build_mac_request(0x120F, bytes.fromhex("04002d31") + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52)
+        body = self._execute(pkg)
+        if len(body) < 87:
+            return ServerSession(today="", last_trading_day="")
         pos = 0
-        idx = 1
+        _count = unpack_from("<H", body, pos, "server_info count")[0]
+        pos += 2
+        pos += 8
+        pos += 3
+        pos += 9
 
-        while pos < filesize:
-            chunk = self._execute(FileDownloadCmd(filename, idx, pos, chunk_size))
-            if not chunk:
+        def _parse_date(p: int) -> tuple[str, int]:
+            d = unpack_from("<I", body, p, "server_info date")[0]
+            return f"{d // 10000}-{d % 10000 // 100:02d}-{d % 100:02d}", p + 4
+        def _parse_session(p: int) -> tuple[list[dict[str, object]], int]:
+            vals = unpack_from("<8H", body, p, "server_info session")
+            sessions: list[dict[str, object]] = []
+            for i in range(0, 8, 2):
+                sessions.append({"open": f"{vals[i] // 60}:{vals[i] % 60:02d}", "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}", })
+            return sessions, p + 16
+        today, pos = _parse_date(pos)
+        pos += 4  # ts1
+        sessions_1, pos = _parse_session(pos)
+        sessions_2, pos = _parse_session(pos)
+        pos += 1  # flag byte
+        last_trading_day, pos = _parse_date(pos)
+        pos += 4  # ts2
+        market_param_1 = 0
+        market_param_2 = 0
+        if pos + 8 <= len(body):
+            market_param_1 = unpack_from("<I", body, pos, "server_info param1")[0]
+            pos += 4
+            market_param_2 = unpack_from("<I", body, pos, "server_info param2")[0]
+        return ServerSession(today=today, last_trading_day=last_trading_day, sessions_1=sessions_1,
+                             sessions_2=sessions_2, market_param_1=market_param_1,
+                             market_param_2=market_param_2)
+
+    def get_kline_offset(self) -> pd.DataFrame:
+        """获取 K 线数据偏移信息。       """
+        pkg = build_mac_request(0x124A, struct.pack("<II5x", 0, 128000))
+        body = self._execute(pkg)
+        return KlineOffsetInfo(total=0, returned=0) if len(body) < 8 else KlineOffsetInfo(total=struct.unpack(">I", body[:4])[0], returned=struct.unpack("<I", body[4:8])[0])
+
+    def get_goods_list(self, market=ExMarket.HK_MAIN_BOARD) -> pd.DataFrame:
+        """获取扩展市场（期货/期权等）商品列表。       """
+        items: list[GoodsItem] = []
+        for page in range(100):
+            pkg = build_mac_request(0x2562, struct.pack("<HII", int(market), page * 1000, 1000))
+            body = self._execute(pkg)
+            _RECORD_SIZE = 48
+            _RECORD_FMT = "<H23sHIBfffHH"
+            require_bytes(body, 0, 2, "GoodsListCmd header")
+            (total,) = unpack_from("<H", body, 0, "GoodsListCmd total")
+            for i in range(total):
+                offset = 2 + i * _RECORD_SIZE
+                require_bytes(body, offset, _RECORD_SIZE, f"GoodsListCmd record[{i}]")
+                category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(_RECORD_FMT, body, offset, f"GoodsListCmd record[{i}]")
+                name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
+                items.append(GoodsItem(name=name, category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1, c2=c2))
+            if total < 1000:
                 break
-            full_data.extend(chunk)
-            pos += len(chunk)
-            idx += 1
-            if len(chunk) < chunk_size:
-                break
-
-        return full_data
-
-    def get_goods_list(self, market: int, start: int = 0, count: int = 600) -> pd.DataFrame:
-        """获取扩展市场（期货/期权等）商品列表。
-
-        Args:
-            market: 扩展市场代码（ExMarket 枚举值）。
-            start: 起始偏移。
-            count: 请求数量（最大 1000）。
-        """
-        items = self._execute(GoodsListCmd(market, start, count))
-        return _to_df(items)
+        return pd.DataFrame(items)
 
 
 class TdxClient(Client):
@@ -4062,7 +3201,26 @@ class ExTdxClient(Client):
 
     def get_markets(self) -> list[ExMarketInfo]:
         """获取扩展行情支持的市场列表。"""
-        return self._execute(GetExMarketsCmd())
+        pkg = bytes.fromhex("01 02 48 69 00 01 02 00 02 00 f4 23")
+        body = self._execute(pkg)
+        results: list[ExMarketInfo] = []
+        if len(body) >= 2:
+            count = unpack_from("<H", body, 0, "ex markets count")[0]
+            pos = 2
+            for _ in range(count):
+                if pos + 64 > len(body):
+                    break
+                raw = body[pos: pos + 64]
+                (category, raw_name, market, raw_short_name) = struct.unpack("<B32sB2s", raw[:36])
+                pos += 64
+                if category == 0 and market == 0:
+                    continue
+                name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
+                short_name = raw_short_name.decode("gbk", errors="replace").rstrip("\x00")
+                results.append(
+                    ExMarketInfo(market=market, category=category, name=name, short_name=short_name))
+        return results
+
 
     def get_instrument_count(self) -> int:
         """获取扩展行情商品总数。"""
@@ -4072,37 +3230,255 @@ class ExTdxClient(Client):
         """获取商品信息列表（分页）。"""
         return self._execute(GetExInstrumentInfoCmd(start, count))
 
-    def get_instrument_quote(self, market: int, code: str) -> ExInstrumentQuote:
+    def get_instrument_quote(self, market=Market.SH, code='600600') -> ExInstrumentQuote:
         """获取单个商品五档实时行情。"""
-        return self._execute(GetExInstrumentQuoteCmd(market, code))
+        pkg = bytes.fromhex("01 01 08 02 02 01 0c 00 0c 00 fa 23") + struct.pack("<B9s", int(market), code.encode("utf-8"))
+        body = self._execute(pkg)
+        if len(body) < 150:
+            return None
+        pos = 0
+        (market, raw_code) = struct.unpack("<B9s", body[pos: pos + 10])
+        pos += 10
+        pos += 4  # skip 4 unknown bytes
+        record_start = pos - 14
+        (pre_close, open_price, high, low, price, kaicang, _unk1, zongliang, xianliang, _unk2, neipan, waipan,
+         _unk3, chicang, b1, b2, b3, b4, b5, bv1, bv2, bv3, bv4, bv5, a1, a2, a3, a4, a5, av1, av2, av3, av4,
+         av5) = struct.unpack("<fffffIIIIIIIIIfffffIIIIIfffffIIIII", body[pos: pos + 136])
+        code = raw_code.decode("utf-8", errors="replace").rstrip("\x00")
+        return ExInstrumentQuote(market=market, code=code, pre_close=pre_close, open=open_price, high=high,
+                                 low=low, price=price, kaicang=kaicang, zongliang=zongliang,
+                                 xianliang=xianliang, neipan=neipan, waipan=waipan, chicang=chicang, bid1=b1,
+                                 bid2=b2, bid3=b3, bid4=b4, bid5=b5, bid_vol1=bv1, bid_vol2=bv2, bid_vol3=bv3,
+                                 bid_vol4=bv4, bid_vol5=bv5, ask1=a1, ask2=a2, ask3=a3, ask4=a4, ask5=a5,
+                                 ask_vol1=av1, ask_vol2=av2, ask_vol3=av3, ask_vol4=av4, ask_vol5=av5,
+                                 _raw=body[record_start: pos + 136])
 
-    def get_instrument_quote_list(self, market: int, category: int, start: int = 0, count: int = 80) -> list[OrderedDict[str, object]]:
+
+    def get_instrument_quote_list(self, market=Market.SH, category=KlineCategory.DAY, start: int = 0, count: int = 80) -> list[OrderedDict[str, object]]:
         """按类别获取商品行情列表。"""
-        return self._execute(GetExInstrumentQuoteListCmd(market, category, start, count))
+        pkg = bytes.fromhex("01 c1 06 0b 00 02 0b 00 0b 00 00 24") + struct.pack("<BHHHH", int(market), 0, start, count, 1)
+        body = self._execute(pkg)
+        if len(body) < 2:
+            return []
 
-    def get_instrument_bars(self, category: int, market: int, code: str, start: int = 0, count: int = 700) -> list[ExInstrumentBar]:
-        """获取K线数据。"""
-        return self._execute(GetExInstrumentBarsCmd(category, market, code, start, count))
+        def _parse_futures(market: int, code: str, body: bytes, pos: int,
+                           results: list[OrderedDict[str, object]]) -> int:
+            if pos + 140 > len(body):
+                return pos + 290
+            (
+                bi_shu, zuo_jie, jin_kai, zui_gao, zui_di, mai_chu, kai_cang, _unk1, zong_liang, xian_liang, zong_jin_e,
+                nei_pan, wai_pan, _unk2, chi_cang_liang, mai_ru_jia, _u1, _u2, _u3, _u4, mai_ru_liang, _u5, _u6, _u7,
+                _u8, mai_chu_jia, _u9, _u10, _u11, _u12, mai_chu_liang, _u13, _u14, _u15) = struct.unpack(
+                "<IfffffIIIIfIIfIfIIIIIIIIIfIIIIIIIII", body[pos: pos + 140])
+            pos += 290
+            results.append(OrderedDict([
+                ("market", market), ("code", code), ("BiShu", bi_shu), ("ZuoJie", zuo_jie), ("JinKai", jin_kai),
+                ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("MaiChu", mai_chu), ("KaiCang", kai_cang),
+                ("ZongLiang", zong_liang), ("XianLiang", xian_liang), ("ZongJinE", zong_jin_e), ("NeiPan", nei_pan),
+                ("WaiPan", wai_pan), ("ChiCangLiang", chi_cang_liang), ("MaiRuJia", mai_ru_jia),
+                ("MaiRuLiang", mai_ru_liang), ("MaiChuJia", mai_chu_jia), ("MaiChuLiang", mai_chu_liang), ]))
+            return pos
 
-    def get_history_instrument_bars_range(self, market: int, code: str, start_date: int, end_date: int) -> list[ExInstrumentBar]:
+        def _parse_hk_stocks(market: int, code: str, body: bytes, pos: int,
+                             results: list[OrderedDict[str, object]]) -> int:
+            if pos + 140 > len(body):
+                return pos + 290
+            (huo_yue_du, zuo_shou, jin_kai, zui_gao, zui_di, xian_jia, _unk1, mai_ru_jia, zong_liang, xian_liang,
+             zong_jin_e, _unk2, _unk3, nei, wai, mrj1, mrj2, mrj3, mrj4, mrj5, mrl1, mrl2, mrl3, mrl4, mrl5, mcj1,
+             mcj2, mcj3, mcj4, mcj5, mcl1, mcl2, mcl3, mcl4, mcl5) = struct.unpack(
+                "<IfffffIfIIfIIIIfffffIIIIIfffffIIIII", body[pos: pos + 140])
+            pos += 290
+            results.append(OrderedDict([
+                ("market", market), ("code", code), ("HuoYueDu", huo_yue_du), ("ZuoShou", zuo_shou),
+                ("JinKai", jin_kai), ("ZuiGao", zui_gao), ("ZuiDi", zui_di), ("XianJia", xian_jia),
+                ("MaiRuJia", mai_ru_jia), ("ZongLiang", zong_liang), ("XianLiang", xian_liang),
+                ("ZongJinE", zong_jin_e), ("Nei", nei), ("Wai", wai), ("MaiRuJia1", mrj1), ("MaiRuJia2", mrj2),
+                ("MaiRuJia3", mrj3), ("MaiRuJia4", mrj4), ("MaiRuJia5", mrj5), ("MaiRuLiang1", mrl1),
+                ("MaiRuLiang2", mrl2), ("MaiRuLiang3", mrl3), ("MaiRuLiang4", mrl4), ("MaiRuLiang5", mrl5),
+                ("MaiChuJia1", mcj1), ("MaiChuJia2", mcj2), ("MaiChuJia3", mcj3), ("MaiChuJia4", mcj4),
+                ("MaiChuJia5", mcj5), ("MaiChuLiang1", mcl1), ("MaiChuLiang2", mcl2), ("MaiChuLiang3", mcl3),
+                ("MaiChuLiang4", mcl4), ("MaiChuLiang5", mcl5), ]))
+            return pos
+        (num,) = struct.unpack("<H", body[0:2])
+        pos = 2
+        results: list[OrderedDict[str, object]] = []
+        for _ in range(num):
+            if pos + 10 > len(body):
+                break
+            (market, raw_code) = struct.unpack("<B9s", body[pos: pos + 10])
+            code = raw_code.strip(b"\x00").decode("gbk", errors="replace")
+            pos += 10
+            if category == 3:
+                pos = _parse_futures(market, code, body, pos, results)
+            elif category == 2:
+                pos = _parse_hk_stocks(market, code, body, pos, results)
+            else:
+                raise Exception(f"不支持的扩展行情类别: {self.category}")
+        return results
+
+    def get_instrument_bars(self, category=KlineCategory.DAY, market=Market.SH, code='600600') -> list[ExInstrumentBar]:
+        """获取K线数据（扩展行情版本，支持期货/港股等）。"""
+        results: list[ExInstrumentBar] = []
+        for page in range(10):
+            pkg = bytes.fromhex("01 01 08 6a 01 01 16 00 16 00 ff 23") + struct.pack("<B9sHHIH", int(market), code.encode("utf-8"), category, 1, page * 700, 700)
+            body = self._execute(pkg)
+            pos = 18
+            if pos + 2 <= len(body):
+                ret_count = struct.unpack("<H", body[pos: pos + 2])[0]
+                pos += 2
+                for _ in range(ret_count):
+                    record_start = pos
+                    year, month, day, hour, minute, pos = get_datetime(category, body, pos)
+                    if pos + 28 > len(body):
+                        break
+                    (open_p, high, low, close_p, position, trade, _price) = struct.unpack("<ffffIIf",
+                                                                                          body[pos: pos + 28])
+                    (amount,) = struct.unpack("<f", body[pos + 16: pos + 20])
+                    pos += 28
+                    results.append(
+                        ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade,
+                                        amount=amount, year=year, month=month, day=day, hour=hour, minute=minute,
+                                        _raw=body[record_start:pos]))
+                if ret_count < 700:
+                    break
+        return pd.DataFrame(results)
+
+    def get_history_instrument_bars_range(self, market=Market.SH, code='600600', start_date=20250101, end_date=20500101) -> list[ExInstrumentBar]:
         """按日期范围获取历史K线。"""
-        return self._execute(GetExHistoryInstrumentBarsRangeCmd(market, code, start_date, end_date))
+        if not hasattr(self, '_seqid'):
+            self._seqid = 1
+        pkg = bytearray.fromhex("01")
+        pkg.extend(struct.pack("<B", self._seqid))
+        self._seqid += 1
+        pkg.extend(bytearray.fromhex("38 92 00 01 16 00 16 00 0D 24"))
+        pkg.extend(struct.pack("<B9s", int(market), code.encode("utf-8")))
+        pkg.extend(bytearray.fromhex("07 00"))
+        pkg.extend(struct.pack("<II", start_date, end_date))
+        body = self._execute(bytes(pkg))
+        pos = 12
+        if pos + 2 <= len(body):
+            (ret_count,) = struct.unpack("<H", body[pos: pos + 2])
+            pos += 2
+            results: list[ExInstrumentBar] = []
+            for _ in range(ret_count):
+                if pos + 32 > len(body):
+                    break
+                record_start = pos
+                (d1, d2, open_p, high, low, close_p, position, trade, settlement) = struct.unpack("<HHffffIIf", body[pos: pos + 32])
+                pos += 32
+                year = d1 // 2048 + 2004
+                month = (d1 % 2048) // 100
+                day = (d1 % 2048) % 100
+                hour, minute = d2 // 60, d2 % 60
+                results.append(
+                    ExInstrumentBar(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade,
+                                    amount=settlement, year=year, month=month, day=day, hour=hour, minute=minute,
+                                    _raw=body[record_start:pos]))
+            return pd.DataFrame(results)
+
 
     def get_minute_time_data(self, market: int, code: str) -> list[ExMinuteBar]:
         """获取当日分时行情数据。"""
-        return self._execute(GetExMinuteTimeDataCmd(market, code))
+        pkg = bytes.fromhex("01 07 08 00 01 01 0c 00 0c 00 0b 24") + struct.pack("<B9s", int(market), code.encode("utf-8"))
+        body = self._execute(pkg)
+        results: list[ExMinuteBar] = []
+        if len(body) >= 12:
+            pos = 0
+            (market, raw_code, num) = struct.unpack("<B9sH", body[pos: pos + 12])
+            pos += 12
+            for _ in range(num):
+                if pos + 18 > len(body):
+                    break
+                record_start = pos
+                (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos: pos + 18])
+                pos += 18
+                hour = raw_time // 60
+                minute = raw_time % 60
+                results.append(
+                    ExMinuteBar(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume,
+                                open_interest=amount, _raw=body[record_start:pos]))
+        return results
+
 
     def get_history_minute_time_data(self, market: int, code: str, date: int) -> list[ExMinuteBar]:
         """获取历史某日分时行情数据（date: YYYYMMDD）。"""
-        return self._execute(GetExHistoryMinuteTimeDataCmd(market, code, date))
+        pkg = bytes.fromhex("01 01 30 00 01 01 10 00 10 00 0c 24") + struct.pack("<IB9s", date, int(market), code.encode("utf-8"))
+        body = self._execute(pkg)
+        results: list[ExMinuteBar] = []
+        if len(body) >= 20:
+            pos = 0
+            (_market, _code, _unk, num) = struct.unpack("<B9s8sH", body[pos: pos + 20])
+            pos += 20
+            for _ in range(num):
+                if pos + 18 > len(body):
+                    break
+                (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos: pos + 18])
+                pos += 18
+                hour = raw_time // 60
+                minute = raw_time % 60
+                results.append(ExMinuteBar(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume, open_interest=amount))
+        return results
 
     def get_transaction_data(self, market: int, code: str, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
         """获取当日分笔成交数据。"""
-        return self._execute(GetExTransactionDataCmd(market, code, start, count))
+        results: list[ExTransactionRecord] = []
+        for page in range(20):
+            pkg = bytes.fromhex("01 01 08 00 03 01 12 00 12 00 fc 23") + struct.pack("<B9siH", int(market), code.encode("utf-8"), page * 1800, 1800)
+            body = self._execute(pkg)
+            if len(body) < 16:
+                break
+            pos = 0
+            (_market, _code, _unk, num) = struct.unpack("<B9s4sH", body[pos: pos + 16])
+            pos += 16
+            for _ in range(num):
+                if pos + 16 > len(body):
+                    break
+                record_start = pos
+                (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
+                pos += 16
+                hour = raw_time // 60
+                minute = raw_time % 60
+                second = direction % 10000
+                if second > 59:
+                    second = 0
+                nature = direction // 10000
+                results.append(
+                    ExTransactionRecord(hour=hour, minute=minute, second=second, price=price, volume=volume,
+                                        zengcang=zengcang, nature=nature, _raw=body[record_start:pos]))
+            if num < 1800:
+                break
+        return results
 
-    def get_history_transaction_data(self, market: int, code: str, date: int, start: int = 0, count: int = 1800) -> list[ExTransactionRecord]:
+
+    def get_history_transaction_data(self, market: int, code: str, date: int) -> list[ExTransactionRecord]:
         """获取历史某日分笔成交数据（date: YYYYMMDD）。"""
-        return self._execute(GetExHistoryTransactionDataCmd(market, code, date, start, count))
+        results = []
+        for page in range(30):
+            pkg = bytes.fromhex("01 01 30 00 02 01 16 00 16 00 06 24") + struct.pack("<IB9siH", date, int(market), code.encode("utf-8"), page * 1800, 1800)
+            body = self._execute(pkg)
+            if len(body) < 16:
+                break
+            pos = 0
+            (_market, _code, _unk, num) = struct.unpack("<B9s4sH", body[pos: pos + 16])
+            pos += 16
+            for _ in range(num):
+                if pos + 16 > len(body):
+                    break
+                record_start = pos
+                (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
+                pos += 16
+                hour = raw_time // 60
+                minute = raw_time % 60
+                second = direction % 10000
+                if second > 59:
+                    second = 0
+                nature = direction // 10000
+                results.append(
+                    ExTransactionRecord(hour=hour, minute=minute, second=second, price=price, volume=volume,
+                                        zengcang=zengcang, nature=nature, _raw=body[record_start:pos]))
+            if num < 1800:
+                break
+        return results
 
 
 class MacExClient(Client):
@@ -4251,11 +3627,28 @@ class MacExClient(Client):
         result = self._execute(cmd)
         return _to_df(result)
 
-    def goods_tick_chart(self, market: ExMarket, code: str, query_date=None) -> pd.DataFrame:
+    def goods_tick_chart(self, market=ExMarket.HK_MAIN_BOARD, code='00616', query_date=0) -> pd.DataFrame:
         """获取单日分时图 """
-        cmd = SymbolTickChartCmd(market=market, code=code, query_date=query_date)
-        result = self._execute(cmd)
-        return _to_df(result)
+        pkg = build_mac_request(0x122D, struct.pack("<H22sI5H", int(market), code.encode("gbk"), query_date, 1, 0, 0, 0, 0))
+        body = self._execute(pkg)
+        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0, "tick_chart header")
+        ticks: list[MacTick] = []
+        for i in range(count):
+            offset = 35 + i * 18
+            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
+            ticks.append(MacTick(time=Time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
+
+        # 尾部元数据
+        tail_offset = 35 + count * 18
+        (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
+         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from(
+            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
+
+        return MacTickChart(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                            name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
+                            pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol),
+                            amount=amount, turnover=turnover, avg=avg_tail, charts=ticks)
+
 
     def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
         """获取分时缩略采样价格点（约 240 个点） """
@@ -4273,31 +3666,27 @@ class MacExClient(Client):
                 prices.append(p)
         return pd.Series(prices)
 
-    def goods_transaction(self, market: int, code: str, query_date=None, start: int = 0, count: int = 2000) -> pd.DataFrame:
-        """获取逐笔成交数据。
-
-        Parameters
-        ----------
-        market : int
-            ExMarket 枚举值。
-        code : str
-            证券代码。
-        query_date : date
-            查询日期，None 表示今天。
-        start : int
-            起始偏移。
-        count : int
-            返回条数。
-        """
-        cmd = SymbolTransactionCmd(market=market, code=code, query_date=query_date, start=start, count=count)
-        result = self._execute(cmd)
-        return _to_df(result)
+    def goods_transaction(self, market: int, code: str, date=0, start: int = 0, count: int = 2000) -> pd.DataFrame:
+        """获取逐笔成交数据。"""
+        results: list[MacTransaction] = []
+        for page in range(20):
+            pkg = build_mac_request(0x122F, struct.pack("<H22sIIH10x", int(market), code.encode("gbk"), date, page * 2000, 2000))
+            body = self._execute(pkg)
+            count = unpack_from("<H", body, 29, "transaction count")[0]
+            for i in range(count):
+                offset = 39 + i * 18
+                (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset, f"transaction item[{i}]")
+                results.append(MacTransaction(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price,
+                                   vol=volume, trade_count=trade_count, bs_flag=bs_flag))
+            if count < 2000:
+                break
+        return pd.DataFrame(results)
 
 
 if __name__ == '__main__':
-    with MacClient() as c:
+    with ExTdxClient() as c:
         # 批量报价（最多 80 只/次）
-        df = c.get_chart_sampling()
+        df = c.get_instrument_quote()
         # 市场分类排序报价
         df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
         print('over')
