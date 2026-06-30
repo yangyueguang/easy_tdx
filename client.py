@@ -1773,41 +1773,6 @@ class BoardMembersQuotesCmd(BaseCommand):
         return results
 
 
-class ChartSamplingCmd(BaseCommand):
-    """获取分时缩略采样价格点。
-
-    返回 240 个 float 价格值（每分钟一个采样点）。
-
-    Args:
-        market: 扩展市场代码（ExMarket 枚举值）。
-        code: 证券代码（GBK 编码）。
-    """
-
-    def __init__(self, market: int, code: str):
-        self.market = market
-        self.code = code
-
-    def build_request(self) -> bytes:
-        raw_code = self.code.encode("gbk")
-        _CODE_LEN = 22
-        padded = (raw_code + b"\x00" * _CODE_LEN)[:_CODE_LEN]
-        body = struct.pack("<H22sHH9x", self.market, padded, 1, 20)
-        return build_mac_request(0x254D, body)
-
-    def parse_response(self, body: bytes) -> list[float]:
-
-        _RESPONSE_HEADER_SIZE = 42  # H(2) + 22s(22) + 9*H(18) = 42
-        if len(body) < _RESPONSE_HEADER_SIZE:
-            return []
-        require_bytes(body, 0, _RESPONSE_HEADER_SIZE, "ChartSamplingCmd header")
-        (count,) = unpack_from("<H", body, 40, "chart_sampling count")
-        prices: list[float] = []
-        for i in range(count):
-            pos = _RESPONSE_HEADER_SIZE + i * 4
-            require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
-            (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
-            prices.append(p)
-        return prices
 
 
 class FileListCmd(BaseCommand):
@@ -3165,15 +3130,21 @@ class MacClient(Client):
                 rows.append(d)
         return pd.DataFrame(rows)
 
-    def get_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
-        """获取分时缩略采样价格点（240 个点）。
-
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-        """
-        prices = self._execute(ChartSamplingCmd(market, code))
-        return pd.DataFrame({"price": prices})
+    def get_chart_sampling(self, market=Market.SH, code='600600') -> pd.DataFrame:
+        """获取分时缩略采样价格点（240 个点）。        """
+        pkg = build_mac_request(0x254D, struct.pack("<H22sHH9x", int(market), (code.encode("gbk") + b"\x00" * 22)[:22], 1, 20))
+        body = self._execute(pkg)
+        sz = 42
+        prices: list[float] = []
+        if len(body) >= sz:
+            require_bytes(body, 0, sz, "ChartSamplingCmd header")
+            count = unpack_from("<H", body, 40, "chart_sampling count")[0]
+            for i in range(count):
+                pos = sz + i * 4
+                require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
+                (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
+                prices.append(p)
+        return pd.Series(prices)
 
     def get_transactions(self, market: int, code: str, count: int = 2000, start: int = 0, date: int = None) -> pd.DataFrame:
         """获取逐笔成交数据（自动分页）。
@@ -4288,11 +4259,19 @@ class MacExClient(Client):
 
     def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
         """获取分时缩略采样价格点（约 240 个点） """
-        cmd = ChartSamplingCmd(market=market, code=code)
-        prices: list[float] = self._execute(cmd)
-        if not prices:
-            return pd.DataFrame()
-        return pd.DataFrame({"price": prices})
+        pkg = build_mac_request(0x254D, struct.pack("<H22sHH9x", market, (code.encode("gbk") + b"\x00" * 22)[:22], 1, 20))
+        body = self._execute(pkg)
+        sz = 42
+        prices: list[float] = []
+        if len(body) >= sz:
+            require_bytes(body, 0, sz, "ChartSamplingCmd header")
+            count = unpack_from("<H", body, 40, "chart_sampling count")[0]
+            for i in range(count):
+                pos = sz + i * 4
+                require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
+                (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
+                prices.append(p)
+        return pd.Series(prices)
 
     def goods_transaction(self, market: int, code: str, query_date=None, start: int = 0, count: int = 2000) -> pd.DataFrame:
         """获取逐笔成交数据。
@@ -4318,7 +4297,7 @@ class MacExClient(Client):
 if __name__ == '__main__':
     with MacClient() as c:
         # 批量报价（最多 80 只/次）
-        df = c.get_board_list()
+        df = c.get_chart_sampling()
         # 市场分类排序报价
         df = c.get_stock_quotes_list(Category.A, count=20, sort_type=SortType.CHANGE_PCT, sort_order=SortOrder.DESC)
         print('over')
