@@ -767,27 +767,23 @@ class MacClient(Client):
         return Dot(code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
                    pre_close=pre_close, open=_open, high=high, low=low, close=close, vol=int(vol), money=money, turnover=turnover, avg=avg_tail, ticks=pd.DataFrame(ticks))
 
-    def get_transactions(self, market: int, code: str, date: int = 0):
-        """获取逐笔成交数据（自动分页 """
+    def transactions(self, code: str, date=0):
+        """获取逐笔成交数据"""
         results = []
         for page in range(20):
-            pkg = self.build_mac_request(0x122F, struct.pack("<H22sIIH10x", int(market), code.encode("gbk"), date, page * 1000, 1000))
+            pkg = self.build_mac_request(0x122F, struct.pack("<H22sIIH10x", get_market(code), code.encode("gbk"), date, page * 1000, 1000))
             body = self._execute(pkg)
             count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
-                offset = 39 + i * 18
-                (time_sec, price, volume, trade_count, bs_flag) = struct.unpack_from("<IfIIH", body, offset)
-                sig = 1 if bs_flag == 0 else -1 if bs_flag == 1 else 0 if bs_flag == 2 else 2
-                results.append(
-                    dict(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price, vol=volume,
-                         trade_count=trade_count, sig=sig))
+                (t, price, volume, trade_count, f) = struct.unpack_from("<IfIIH", body, 39 + i * 18)
+                results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=volume, trade_count=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
             if count < 1000:
                 break
         return pd.DataFrame(results)
 
-    def get_symbol_info(self, market=Market.SH, code='600600'):
-        """获取个股简要特征快照        """
-        pkg = self.build_mac_request(0x122A, struct.pack("<H22sI12x", int(market), code.encode("gbk"), 1))
+    def get_symbol_info(self, code='600600'):
+        """获取个股简要特征快照"""
+        pkg = self.build_mac_request(0x122A, struct.pack("<H22sI12x", get_market(code), code.encode("gbk"), 1))
         body = self._execute(pkg)
         (market, code_raw, name_raw) = struct.unpack_from("<H22s44s", body, 8)
         (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume,
@@ -1933,5 +1929,5 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with MacClient() as c:
-        df = c.get_chart_sampling('600600')
+        df = c.get_symbol_info('600600')
         print('over')
