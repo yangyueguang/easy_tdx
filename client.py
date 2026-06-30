@@ -60,14 +60,6 @@ class Period(IntEnum):
     MIN_1 = 7
 
 
-class Adjust(IntEnum):
-    """复权类型。"""
-
-    NONE = 0
-    QFQ = 1  # 前复权
-    HFQ = 2  # 后复权
-
-
 class BoardType(IntEnum):
     """板块类型。"""
     HY = 0  # 行业一级
@@ -91,7 +83,6 @@ class Category(IntEnum):
     KCB = 8  # 科创板
     BJ = 12  # 北证A
     CYB = 14  # 创业板
-
     BOARD_ALL = 10000  # 全部板块
     BOARD_HY = 10001  # 行业一级
     BOARD_HY2 = 10002  # 行业二级
@@ -102,7 +93,6 @@ class Category(IntEnum):
     BOARD_YJ_LEVEL1 = 10008  # 业绩一级
     BOARD_YJ_LEVEL2 = 10009  # 业绩二级
     BOARD_YJ_LEVEL3 = 10010  # 业绩三级
-
     HGT = 0x2AF9  # 沪股通
     SGT = 0x2B01  # 深股通
     FXJS = 0x2AFF  # 风险警示
@@ -174,13 +164,6 @@ class Market(IntEnum):
     BJ = 2  # 北京
 
 
-class KlineCategory(IntEnum):
-    MIN_5 = 0
-    MIN_60 = 3
-    DAY = 4
-    MIN_1 = 7
-
-
 class FieldBit(IntEnum):
     """字段位定义，自带格式和描述，单一数据源。"""
 
@@ -236,9 +219,7 @@ class FieldBit(IntEnum):
 
 class PresetField(Enum):
     """预定义字段集合，支持 + / | 链式组合 """
-    OHLC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE)
-    BASIC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.PRE_CLOSE, FieldBit.VOL)
-    VOLUME = (FieldBit.VOL, FieldBit.AMOUNT, FieldBit.TURNOVER, FieldBit.VOL_RATIO)
+    BASIC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.PRE_CLOSE, FieldBit.VOL, FieldBit.AMOUNT, FieldBit.TURNOVER, FieldBit.VOL_RATIO)
     BOARD_STATS = (FieldBit.LIMIT_UP_COUNT, FieldBit.LIMIT_DOWN_COUNT, FieldBit.UP_COUNT, FieldBit.DOWN_COUNT)
     COMMON = (
     FieldBit.PRE_CLOSE, FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.VOL, FieldBit.VOL_RATIO,
@@ -264,12 +245,7 @@ class PresetField(Enum):
 
 
 class FieldSelection:
-    """字段选择器，支持 PresetField + FieldBit 组合。
-    Usage:
-        PresetField.BASIC + FieldBit.
-        PresetField.BASIC | FieldBit.INDUSTRY
-        FieldBit.OPEN + FieldBit.HIGH + FieldBit.LOW
-    """
+    """字段选择器，支持 PresetField + FieldBit 组合"""
 
     __slots__ = ("_fields",)
 
@@ -332,46 +308,9 @@ def _recv_exact_sock(sock: socket.socket, n: int) -> bytes:
     return bytes(buf)
 
 
-def _decode_share_count(raw: int) -> float:
-    """股本数量解码（通达信自定义4字节浮点 → 万股）。
-
-    xdxr_info 的股本字段与成交量字段使用相同的自定义浮点编码，
-    解码结果单位为万股，与.zong_guben / 10000 一致。
-    """
-    return _decode_volume(raw)
 
 
-def require_bytes(data: bytes, pos: int, size: int, context: str):
-    """确保从 pos 起至少还能读取 size 字节。"""
-    if pos < 0:
-        raise Exception(f"{context}: 非法偏移 {pos}")
-    end = pos + size
-    if end > len(data):
-        remaining = max(len(data) - pos, 0)
-        raise Exception(f"{context}: 数据不足，需要 {size} 字节，偏移 {pos}，实际剩余 {remaining} 字节")
-
-
-def unpack_from(fmt: str, data: bytes, pos: int, context: str) -> tuple:
-    """带边界检查的 struct.unpack_from。"""
-    require_bytes(data, pos, struct.calcsize(fmt), context)
-    try:
-        return struct.unpack_from(fmt, data, pos)
-    except struct.error as e:  # pragma: no cover - require_bytes 已覆盖大部分路径
-        raise Exception(f"{context}: 解析失败: {e}") from e
-
-
-def slice_bytes(data: bytes, pos: int, size: int, context: str) -> bytes:
-    """带边界检查的切片读取。"""
-    require_bytes(data, pos, size, context)
-    return bytes(data[pos: pos + size])
-
-
-def build_mac_request(msg_id: int, body: bytes, *, head_flag: int = 0x1C) -> bytes:
-    inner = struct.pack("<H", msg_id) + body
-    return struct.pack("<BIBHH", head_flag, 0, 1, len(inner), len(inner)) + inner
-
-
-def build_bitmap(fields, exclude_flags: int = 0) -> bytearray:
+def build_bitmap(fields) -> bytearray:
     """将字段选择转换为 20 字节请求位图  """
     if fields is None:
         selection = FieldSelection()
@@ -386,8 +325,7 @@ def build_bitmap(fields, exclude_flags: int = 0) -> bytearray:
     bitmap_int = 0
     for bit in selection:
         bitmap_int |= 1 << bit.value
-    ba = bytearray(bitmap_int.to_bytes(16, "little"))
-    ba.extend(exclude_flags.to_bytes(4, "little"))
+    ba = bytearray(bitmap_int.to_bytes(16, "little")) + b'\x00\x00\x00\x00'
     return ba
 
 
@@ -406,14 +344,14 @@ def get_active_fields(bitmap_bytes: bytes) -> list[tuple[FieldBit, str]]:
 
 
 def get_datetime(category: int, data: bytes, pos: int) -> tuple[int, int, int, int, int, int]:
-    """根据 KlineCategory 选择解析格式。
+    """根据  选择解析格式。
 
     Returns:
         (year, month, day, hour, minute, new_pos)
         日线及以上时 hour=15, minute=0（收盘时间，与 pytdx 保持一致）
     """
     if category < 4 or category in (7, 8):
-        zipday, tminutes = unpack_from("<HH", data, pos, "minute datetime")
+        zipday, tminutes = struct.unpack_from("<HH", data, pos)
         year = (zipday >> 11) + 2004
         month = (zipday % 2048) // 100
         day = (zipday % 2048) % 100
@@ -421,7 +359,7 @@ def get_datetime(category: int, data: bytes, pos: int) -> tuple[int, int, int, i
         minute = tminutes % 60
         return year, month, day, hour, minute, pos + 4
     else:
-        (zipday,) = unpack_from("<I", data, pos, "day datetime")
+        (zipday,) = struct.unpack_from("<I", data, pos)
         year = zipday // 10000
         month = (zipday % 10000) // 100
         day = zipday % 100
@@ -430,7 +368,7 @@ def get_datetime(category: int, data: bytes, pos: int) -> tuple[int, int, int, i
 
 def parse_header(buf: bytes):
     """解析 16 字节响应帧头。"""
-    magic, seq_id, method, zipsize, unzipsize = unpack_from("<IIIHH", buf, 0, "frame header")
+    magic, seq_id, method, zipsize, unzipsize = struct.unpack_from("<IIIHH", buf, 0)
     return Dot(magic=magic, seq_id=seq_id, method=method, zipsize=zipsize, unzipsize=unzipsize)
 
 
@@ -463,7 +401,7 @@ def get_price(data: bytes, pos: int) -> tuple[int, int]:
 
 
 def get_volume(data: bytes, pos: int) -> tuple[float, int]:
-    (ivol,) = unpack_from("<I", data, pos, "volume")
+    (ivol,) = struct.unpack_from("<I", data, pos)
     return _decode_volume(ivol), pos + 4
 
 
@@ -517,7 +455,16 @@ class TdxConnection:
             raise Exception(f"无法连接 {self.host}:{self.port}: {e}") from e
         self._sock = sock
         try:
-            self._send_setup()
+            SETUP_COMMANDS = (bytes.fromhex("0c0218930001030003000d0001"), bytes.fromhex("0c0218940001030003000d0002"), bytes.fromhex("0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002"))
+            for cmd_bytes in SETUP_COMMANDS:
+                self._sock.sendall(cmd_bytes)
+                try:
+                    hdr_buf = self._recv_exact(HEADER_SIZE)
+                    hdr = parse_header(hdr_buf)
+                    if hdr.zipsize > 0:
+                        self._recv_exact(hdr.zipsize)
+                except OSError:
+                    pass
         except Exception:
             try:
                 sock.close()
@@ -578,7 +525,6 @@ class TdxConnection:
 
     def _heartbeat_loop(self):
         """心跳循环：在后台线程中运行。"""
-        assert self._stop_event is not None
         while not self._stop_event.wait(timeout=15):
             if time.monotonic() - self._last_active <= 15:
                 continue
@@ -595,10 +541,10 @@ class TdxConnection:
                     return
                 try:
                     self._sock.sendall(bytes.fromhex("0c0218930001030003000d0001"))
-                    hdr_buf = _recv_exact_sock(self._sock, HEADER_SIZE)
+                    hdr_buf = self._recv_exact(HEADER_SIZE)
                     hdr = parse_header(hdr_buf)
                     if hdr.zipsize > 0:
-                        _recv_exact_sock(self._sock, hdr.zipsize)
+                        self._recv_exact(hdr.zipsize)
                 except OSError:
                     try:
                         if self._sock: self._sock.close()
@@ -607,27 +553,8 @@ class TdxConnection:
                     self._sock = None
                     return
 
-    def _send_setup(self):
-        """按序发送三条握手命令并丢弃响应。"""
-        assert self._sock is not None
-        SETUP_COMMANDS = (bytes.fromhex("0c0218930001030003000d0001"), bytes.fromhex("0c0218940001030003000d0002"),
-                          bytes.fromhex(
-                              "0c031899000120002000db0fd5d0c9ccd6a4a8af0000008fc22540130000d500c9ccbdf0d7ea00000002"))
-        for cmd_bytes in SETUP_COMMANDS:
-            self._sock.sendall(cmd_bytes)
-            # 读取并丢弃握手响应
-            try:
-                hdr_buf = self._recv_exact(HEADER_SIZE)
-                hdr = parse_header(hdr_buf)
-                if hdr.zipsize > 0:
-                    self._recv_exact(hdr.zipsize)
-            except OSError:
-                # 部分服务器的握手无响应，忽略错误
-                pass
-
     def _recv_exact(self, n: int) -> bytes:
         """循环 recv 直到读满 n 字节。"""
-        assert self._sock is not None
         return _recv_exact_sock(self._sock, n)
 
 
@@ -701,11 +628,16 @@ class Client:
         self._host = host or config.get("best_host") or self.from_best_host()
         self._conn = TdxConnection(self._host)
 
+    @staticmethod
+    def build_mac_request(msg_id: int, body: bytes, *, head_flag: int = 0x1C) -> bytes:
+        inner = struct.pack("<H", msg_id) + body
+        return struct.pack("<BIBHH", head_flag, 0, 1, len(inner), len(inner)) + inner
+
     def _parse_quotes(self, body: bytes):
         pos = 0
         field_bitmap = body[pos: pos + 20]
         pos += 20
-        (total_stocks, row_count) = unpack_from("<IH", body, pos, "symbol_quotes header")
+        (total_stocks, row_count) = struct.unpack_from("<IH", body, pos)
         pos += 6
         active = get_active_fields(field_bitmap[:16])
         field_count = len(active)
@@ -717,7 +649,7 @@ class Client:
                 break
             row_data = body[pos:row_end]
             pos = row_end
-            (market, code_raw, name_raw) = unpack_from("<H22s44s", row_data, 0, "symbol_quotes row")
+            (market, code_raw, name_raw) = struct.unpack_from("<H22s44s", row_data, 0)
             code = code_raw.decode("gbk", errors="ignore").replace("\x00", "")
             name = name_raw.decode("gbk", errors="ignore").replace("\x00", "")
             fields_dict: dict = {}
@@ -800,12 +732,12 @@ class MacClient(Client):
         body += struct.pack("<H", len(stocks))
         for market, code in stocks:
             body += struct.pack("<H22s", market, code.encode("gbk"))
-        pkg = build_mac_request(0x122B, bytes(body))
+        pkg = self.build_mac_request(0x122B, bytes(body))
         return self._parse_quotes(self._execute(pkg))
 
     def get_stock_quotes_list(self, category: str, fields=None) -> pd.DataFrame:
         """获取市场分类报价列表（自动分页） category: 市场分类（如 Category.A, Category.SH, Category.KCB 或者板块指数代码等）。"""
-        fields = fields or PresetField.BASIC + PresetField.VOLUME
+        fields = fields or PresetField.BASIC
 
         def _convert_board_code(board_symbol: str) -> int:
             s = board_symbol.strip()
@@ -834,16 +766,16 @@ class MacClient(Client):
             body += bytes(bitmap[:16])
             b1 = sum(f.value for f in [])
             body += struct.pack("<BBBB", 0, b1, 0, 1)
-            pkg = build_mac_request(0x122C, body)
+            pkg = self.build_mac_request(0x122C, body)
             body = self._execute(pkg)
             resp_bitmap = body[:20]
-            total, row_count = unpack_from("<IH", body, 20, "board_members header")
+            total, row_count = struct.unpack_from("<IH", body, 20)
             active_fields = get_active_fields(resp_bitmap[:16])
             field_count = len(active_fields)
             row_len = 68 + field_count * 4
             for i in range(row_count):
                 row_start = 26 + i * row_len
-                market_raw = unpack_from("<H", body, row_start, f"board_members row[{i}] market")[0]
+                market_raw = struct.unpack_from("<H", body, row_start)[0]
                 code_raw = body[row_start + 2: row_start + 24]
                 name_raw = body[row_start + 24: row_start + 68]
                 fields_dict: dict[str, object] = {}
@@ -861,15 +793,15 @@ class MacClient(Client):
         return pd.DataFrame(results)
 
     def get_stock_kline(self, market: int, code: str, period: Period = Period.DAILY,
-                        adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
+                        adjust=False) -> pd.DataFrame:
         """获取 K 线数据（自动分页，每页最多 700 条）"""
         results = []
         for page in range(10):
-            pkg = build_mac_request(0x122E,
+            pkg = self.build_mac_request(0x122E,
                                     struct.pack("<H22sHH I HH bbb bH4s", int(market), code.encode("gbk"), int(period),
                                                 1, page * 700, 700, int(adjust), 1, 1, 0, 1, 0, b""))
             body = self._execute(pkg)
-            (category_flag, _flag, count, start) = unpack_from("<HBHI", body, 24, "symbol_bar header")
+            (category_flag, _flag, count, start) = struct.unpack_from("<HBHI", body, 24)
             count = min(count, (len(body) - 33) // 36)
             if count < 0:
                 count = 0
@@ -877,8 +809,7 @@ class MacClient(Client):
                 offset = 33 + i * 36
                 if offset + 36 > len(body):
                     break
-                (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from("<II7f", body, offset,
-                                                                                                  f"symbol_bar bar[{i}]")
+                (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = struct.unpack_from("<II7f", body, offset)
                 if ymd < 19900101 or ymd > 20991231:
                     continue
                 year = ymd // 10000
@@ -891,44 +822,22 @@ class MacClient(Client):
                 break
         return pd.DataFrame(results)
 
-    def get_stock_kline_with_indicators(self, market: int, code: str, indicators: list[str],
-                                        period: Period = Period.DAILY, count: int = 30, adjust: Adjust = Adjust.QFQ,
-                                        params: dict[str, dict[str, float]] = None) -> pd.DataFrame:
-        """获取 K 线数据并计算技术指标。
-
-        自动获取足够的历史数据用于指标预热（EMA 至少需要 120 周期）。
-
-        Args:
-            market: 市场代码。
-            code: 股票代码。
-            indicators: 指标名称列表，如 ``["MACD", "KDJ"]``。
-            period: K 线周期。
-            count: 返回条数（默认30）。
-            adjust: 复权方式（默认前复权）。
-            params: 可选指标参数覆盖。
-        """
-
-        fetch_count = max(120 + count, 200)
-        df = self.get_stock_kline(market, code, period=period, count=fetch_count, adjust=adjust)
-        return df
-
     def get_tick_chart(self, market=Market.SH, code='600600', date: int = 0) -> pd.DataFrame:
         """获取单日分时图。        """
-        pkg = build_mac_request(0x122D, struct.pack("<H22sI5H", int(market), code.encode("gbk"), date, 1, 0, 0, 0, 0))
+        pkg = self.build_mac_request(0x122D, struct.pack("<H22sI5H", int(market), code.encode("gbk"), date, 1, 0, 0, 0, 0))
         body = self._execute(pkg)
-        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0,
-                                                                                 "tick_chart header")
+        (market, code_raw, query_date, reserved, ref_price, count) = struct.unpack_from("<H22sIBfH", body, 0)
         ticks = []
         for i in range(count):
             offset = 35 + i * 18
-            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
+            (minutes, price, avg, vol, momentum) = struct.unpack_from("<HffIf", body, offset)
             ticks.append(
                 dict(time=Time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
         # 尾部元数据
         tail_offset = 35 + count * 18
         (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
-         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from(
-            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
+         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = struct.unpack_from(
+            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset)
 
         chart = Dot(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
                     name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
@@ -938,12 +847,12 @@ class MacClient(Client):
 
     def get_tick_charts(self, market=Market.SH, code='600600', date: int = 20260629, days: int = 5) -> pd.DataFrame:
         """获取多日分时图（最多 5 天）        """
-        pkg = build_mac_request(0x123E, struct.pack("<H22sIHH6x", int(market), code.encode("gbk"), date, days, 1))
+        pkg = self.build_mac_request(0x123E, struct.pack("<H22sIHH6x", int(market), code.encode("gbk"), date, days, 1))
         body = self._execute(pkg)
-        (market, code_raw) = unpack_from("<H22s", body, 0, "tick_charts header")
-        date_ints = unpack_from("<5I", body, 24, "tick_charts dates")
-        pre_close_floats = unpack_from("<5f", body, 44, "tick_charts pre_closes")
-        (count, send_last, page_size, total) = unpack_from("<HBHH", body, 64, "tick_charts header2")
+        (market, code_raw) = struct.unpack_from("<H22s", body, 0)
+        date_ints = struct.unpack_from("<5I", body, 24, "tick_charts dates")
+        pre_close_floats = struct.unpack_from("<5f", body, 44)
+        (count, send_last, page_size, total) = struct.unpack_from("<HBHH", body, 64)
 
         days = []
         for d in range(count):
@@ -951,16 +860,15 @@ class MacClient(Client):
             for t in range(page_size):
                 index = d * page_size + t
                 offset = 71 + index * 14
-                (minutes, price, avg, vol, tick_reserved) = unpack_from("<HffHH", body, offset,
-                                                                        f"tick_charts tick[{d}][{t}]")
+                (minutes, price, avg, vol, tick_reserved) = struct.unpack_from("<HffHH", body, offset)
                 ticks.append(dict(time=Time(min(15, minutes // 60), minutes % 60), price=price, avg=avg, vol=vol))
             ymd = date_ints[d]
             day_date = datetime(ymd // 10000, (ymd % 10000) // 100, ymd % 100)
             days.append(Dot(date=day_date, pre_close=pre_close_floats[d], ticks=ticks))
         tail_offset = 71 + count * page_size * 14
         (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
-         _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = unpack_from("<44sBHf5x2I5ffIf12s2fI", body,
-                                                                                     tail_offset, "tick_charts tail")
+         _momentum, vol, amount, _tail_pad2, turnover, avg, _industry) = struct.unpack_from("<44sBHf5x2I5ffIf12s2fI", body,
+                                                                                     tail_offset)
 
         chart = Dot(market=market,
                     code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
@@ -978,18 +886,16 @@ class MacClient(Client):
 
     def get_chart_sampling(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取分时缩略采样价格点（240 个点）。        """
-        pkg = build_mac_request(0x254D,
+        pkg = self.build_mac_request(0x254D,
                                 struct.pack("<H22sHH9x", int(market), (code.encode("gbk") + b"\x00" * 22)[:22], 1, 20))
         body = self._execute(pkg)
         sz = 42
         prices: list[float] = []
         if len(body) >= sz:
-            require_bytes(body, 0, sz, "ChartSamplingCmd header")
-            count = unpack_from("<H", body, 40, "chart_sampling count")[0]
+            count = struct.unpack_from("<H", body, 40)[0]
             for i in range(count):
                 pos = sz + i * 4
-                require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
-                (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
+                (p,) = struct.unpack_from("<f", body, pos)
                 prices.append(p)
         return pd.Series(prices)
 
@@ -998,15 +904,14 @@ class MacClient(Client):
         """获取逐笔成交数据（自动分页 """
         results = []
         for page in range(20):
-            pkg = build_mac_request(0x122F,
+            pkg = self.build_mac_request(0x122F,
                                     struct.pack("<H22sIIH10x", int(market), code.encode("gbk"), date, page * 1000,
                                                 1000))
             body = self._execute(pkg)
-            count = unpack_from("<H", body, 29, "transaction count")[0]
+            count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
                 offset = 39 + i * 18
-                (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset,
-                                                                              f"transaction item[{i}]")
+                (time_sec, price, volume, trade_count, bs_flag) = struct.unpack_from("<IfIIH", body, offset)
                 sig = 1 if bs_flag == 0 else -1 if bs_flag == 1 else 0 if bs_flag == 2 else 2
                 results.append(
                     dict(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price, vol=volume,
@@ -1017,12 +922,12 @@ class MacClient(Client):
 
     def get_symbol_info(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股简要特征快照        """
-        pkg = build_mac_request(0x122A, struct.pack("<H22sI12x", int(market), code.encode("gbk"), 1))
+        pkg = self.build_mac_request(0x122A, struct.pack("<H22sI12x", int(market), code.encode("gbk"), 1))
         body = self._execute(pkg)
-        (market, code_raw, name_raw) = unpack_from("<H22s44s", body, 8, "symbol_info identity")
+        (market, code_raw, name_raw) = struct.unpack_from("<H22s44s", body, 8)
         (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume,
-         outside_volume) = unpack_from("<III5ffIfII", body, 96, "symbol_info core")
-        (_decimal, _a, _b, _c, _vr, turnover, avg) = unpack_from("<HIf20xI3f", body, 148, "symbol_info extra")
+         outside_volume) = struct.unpack_from("<III5ffIfII", body, 96)
+        (_decimal, _a, _b, _c, _vr, turnover, avg) = struct.unpack_from("<HIf20xI3f", body, 148)
         dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000,
                       (time_raw % 10000) // 100, time_raw % 100)
         return dict(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
@@ -1035,17 +940,17 @@ class MacClient(Client):
         """获取板块列表（自动分页） """
         results = []
         for page in range(100):
-            pkg = build_mac_request(0x1231, struct.pack("<HHBBHH8x", 150, int(board_type), 0, 0, page * 150, 1))
+            pkg = self.build_mac_request(0x1231, struct.pack("<HHBBHH8x", 150, int(board_type), 0, 0, page * 150, 1))
             body = self._execute(pkg)
-            count_all, total = unpack_from("<HH", body, 0, "board_list header")
+            count_all, total = struct.unpack_from("<HH", body, 0)
             count = count_all // 2
             _RECORD_FMT = "<H6s16s44sfffH6s16s44sfff"
             _RECORD_SIZE = struct.calcsize(_RECORD_FMT)  # 160
             for i in range(count):
                 offset = 4 + i * _RECORD_SIZE
                 (market, code_raw, _pad1, name_raw, price, rise_speed, pre_close, symbol_market, symbol_code_raw,
-                 _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = unpack_from(
-                    _RECORD_FMT, body, offset, f"board_list record[{i}]")
+                 _pad2, symbol_name_raw, symbol_price, symbol_rise_speed, symbol_pre_close) = struct.unpack_from(
+                    _RECORD_FMT, body, offset)
                 results.append(
                     dict(market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
                          name=name_raw.decode("gbk", errors="replace").rstrip("\x00"), price=price,
@@ -1065,7 +970,7 @@ class MacClient(Client):
             market: 市场代码。
             code: 股票代码。
         """
-        pkg = build_mac_request(0x1218, struct.pack("<H8s16x21s", market, code.encode("gbk"), b"Stock_GLHQ"),
+        pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", market, code.encode("gbk"), b"Stock_GLHQ"),
                                 head_flag=1)
         body = self._execute(pkg)
         json_bytes = body[27:]
@@ -1099,12 +1004,10 @@ class MacClient(Client):
     def get_board_summary(self, board_symbol='881001') -> dict:
         """获取板块汇总：总成交金额、主力资金流向等（聚合成分股数据）。        """
 
-        fields = (PresetField.BASIC
-                  + FieldBit.AMOUNT
-                  + FieldBit.MAIN_NET_AMOUNT)
+        fields = (PresetField.BASIC + FieldBit.MAIN_NET_AMOUNT)
         df = self.get_stock_quotes_list(board_symbol, fields=fields)
 
-        agg_keys = ("amount", "main_net_amount", "main_net_3d_amount", "main_net_5d_amount")
+        agg_keys = ("amount", "main_net_amount")
         numeric_cols = [c for c in agg_keys if c in df.columns]
         sums = df[numeric_cols].sum() if numeric_cols else pd.Series(dtype=float)
 
@@ -1225,7 +1128,7 @@ class MacClient(Client):
             board_market = int(row["market"]) if "market" in row.index else 1
             try:
                 kline_df = self.get_stock_kline(market=board_market, code=board_code, period=Period.DAILY,
-                                                count=fetch_count, adjust=Adjust.NONE)
+                                                count=fetch_count, adjust=False)
             except Exception:
                 print("板块 %s K线获取失败，跳过", board_code)
                 continue
@@ -1264,7 +1167,7 @@ class MacClient(Client):
 
     def get_capital_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股资金流向        """
-        pkg = build_mac_request(0x1218, struct.pack("<H8s16x21s", int(market), code.encode("gbk"), b"Stock_ZJLX"),
+        pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", int(market), code.encode("gbk"), b"Stock_ZJLX"),
                                 head_flag=2)
 
         body = self._execute(pkg)
@@ -1300,14 +1203,14 @@ class MacClient(Client):
         """获取集合竞价数据        """
         items = []
         for page in range(10):
-            pkg = build_mac_request(0x123D, struct.pack("<H22sII10x", int(market), code.encode("gbk"), page * 500, 500))
+            pkg = self.build_mac_request(0x123D, struct.pack("<H22sII10x", int(market), code.encode("gbk"), page * 500, 500))
             body = self._execute(pkg)
-            _market, _code, count = unpack_from("<H22sI", body, 0, "auction header")
+            _market, _code, count = struct.unpack_from("<H22sI", body, 0)
             for i in range(count):
                 offset = 36 + i * 16
                 if offset + 16 > len(body):
                     break
-                time_sec, price, matched, unmatched = unpack_from("<IfIi", body, offset, f"auction item[{i}]")
+                time_sec, price, matched, unmatched = struct.unpack_from("<IfIi", body, offset)
                 items.append(dict(time=Time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60), price=price,
                                   matched=matched, unmatched=unmatched))
             if count < 500:
@@ -1318,17 +1221,16 @@ class MacClient(Client):
         """个股异动"""
         dfs = []
         for page in range(100):
-            body = self._execute(build_mac_request(0x1237,
+            body = self._execute(self.build_mac_request(0x1237,
                                                    struct.pack("<HH2xH2xH5H", market % 3, page * 600, 600, 1, 200, 30,
                                                                40, 50, 200)))
-            count = unpack_from("<H", body, 0, "unusual count")[0]
+            count = struct.unpack_from("<H", body, 0)[0]
             results = []
             for i in range(count):
                 offset = 2 + i * 32
                 if offset + 32 > len(body):
                     break
-                market, code_raw, _, unusual_type, _, index, _z = unpack_from("<H6sBBBHH", body, offset,
-                                                                              f"unusual record[{i}]")
+                market, code_raw, _, unusual_type, _, index, _z = struct.unpack_from("<H6sBBBHH", body, offset)
                 data = body[offset + 15: offset + 28]
                 desc = val = ''
                 if len(data) >= 13:
@@ -1396,7 +1298,7 @@ class MacClient(Client):
                     else:
                         desc = f"异动类型{unusual_type:#04x}"
                         val = ""
-                hour, minute_sec = unpack_from("<BH", body, offset + 29, f"unusual time[{i}]")
+                hour, minute_sec = struct.unpack_from("<BH", body, offset + 29)
                 results.append(
                     Dot(index=index, market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
                         name="", time=Time(hour, minute_sec // 100, minute_sec % 100), desc=desc, value=val,
@@ -1413,23 +1315,23 @@ class MacClient(Client):
 
     def get_server_info(self) -> pd.DataFrame:
         """获取服务器交易时段信息。"""
-        pkg = build_mac_request(0x120F, bytes.fromhex("04002d31") + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52)
+        pkg = self.build_mac_request(0x120F, bytes.fromhex("04002d31") + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52)
         body = self._execute(pkg)
         if len(body) < 87:
             return
         pos = 0
-        _count = unpack_from("<H", body, pos, "server_info count")[0]
+        _count = struct.unpack_from("<H", body, pos)[0]
         pos += 2
         pos += 8
         pos += 3
         pos += 9
 
         def _parse_date(p: int) -> tuple[str, int]:
-            d = unpack_from("<I", body, p, "server_info date")[0]
+            d = struct.unpack_from("<I", body, p)[0]
             return f"{d // 10000}-{d % 10000 // 100:02d}-{d % 100:02d}", p + 4
 
         def _parse_session(p: int) -> tuple[list[dict[str, object]], int]:
-            vals = unpack_from("<8H", body, p, "server_info session")
+            vals = struct.unpack_from("<8H", body, p)
             sessions: list[dict[str, object]] = []
             for i in range(0, 8, 2):
                 sessions.append({"open": f"{vals[i] // 60}:{vals[i] % 60:02d}",
@@ -1446,16 +1348,16 @@ class MacClient(Client):
         market_param_1 = 0
         market_param_2 = 0
         if pos + 8 <= len(body):
-            market_param_1 = unpack_from("<I", body, pos, "server_info param1")[0]
+            market_param_1 = struct.unpack_from("<I", body, pos)[0]
             pos += 4
-            market_param_2 = unpack_from("<I", body, pos, "server_info param2")[0]
+            market_param_2 = struct.unpack_from("<I", body, pos)[0]
         return dict(today=today, last_trading_day=last_trading_day, sessions_1=sessions_1,
                     sessions_2=sessions_2, market_param_1=market_param_1,
                     market_param_2=market_param_2)
 
     def get_kline_offset(self) -> pd.DataFrame:
         """获取 K 线数据偏移信息。       """
-        pkg = build_mac_request(0x124A, struct.pack("<II5x", 0, 128000))
+        pkg = self.build_mac_request(0x124A, struct.pack("<II5x", 0, 128000))
         body = self._execute(pkg)
         return dict(total=0, returned=0) if len(body) < 8 else dict(total=struct.unpack(">I", body[:4])[0],
                                                                     returned=struct.unpack("<I", body[4:8])[0])
@@ -1464,17 +1366,14 @@ class MacClient(Client):
         """获取扩展市场（期货/期权等）商品列表。       """
         items = []
         for page in range(100):
-            pkg = build_mac_request(0x2562, struct.pack("<HII", int(market), page * 1000, 1000))
+            pkg = self.build_mac_request(0x2562, struct.pack("<HII", int(market), page * 1000, 1000))
             body = self._execute(pkg)
             _RECORD_SIZE = 48
             _RECORD_FMT = "<H23sHIBfffHH"
-            require_bytes(body, 0, 2, "GoodsListCmd header")
-            (total,) = unpack_from("<H", body, 0, "GoodsListCmd total")
+            (total,) = struct.unpack_from("<H", body, 0)
             for i in range(total):
                 offset = 2 + i * _RECORD_SIZE
-                require_bytes(body, offset, _RECORD_SIZE, f"GoodsListCmd record[{i}]")
-                category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = unpack_from(_RECORD_FMT, body, offset,
-                                                                                       f"GoodsListCmd record[{i}]")
+                category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = struct.unpack_from(_RECORD_FMT, body, offset)
                 name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
                 items.append(
                     dict(name=name, category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1,
@@ -1495,12 +1394,12 @@ class TdxClient(Client):
         body = self._execute(bytes(body))
         pos = 0
         pos += 2
-        (num,) = unpack_from("<H", body, pos, "security_quotes header")
+        (num,) = struct.unpack_from("<H", body, pos)
         pos += 2
         results = []
         for _ in range(num):
             record_start = pos
-            market_b, code_b, active1 = unpack_from("<B6sH", body, pos, "security_quotes record header")
+            market_b, code_b, active1 = struct.unpack_from("<B6sH", body, pos)
             pos += 9
             price_raw, pos = get_price(body, pos)
             last_close_diff, pos = get_price(body, pos)
@@ -1545,13 +1444,13 @@ class TdxClient(Client):
             ask5_d, pos = get_price(body, pos)
             bv5, pos = get_price(body, pos)
             av5, pos = get_price(body, pos)
-            (trading_status,) = unpack_from("<H", body, pos, "security_quotes tail flag")
+            (trading_status,) = struct.unpack_from("<H", body, pos)
             pos += 2
             unknown_5, pos = get_price(body, pos)
             unknown_6, pos = get_price(body, pos)
             unknown_7, pos = get_price(body, pos)
             unknown_8, pos = get_price(body, pos)
-            rise_speed_raw, active2 = unpack_from("<hH", body, pos, "security_quotes tail")
+            rise_speed_raw, active2 = struct.unpack_from("<hH", body, pos)
             pos += 4
             p = price_raw / 100.0
             raw = unknown_0
@@ -1603,14 +1502,14 @@ class TdxClient(Client):
         limit_down = round(pre_close * (1 - limit_pct) + 0.00001, 2)
         return limit_up, limit_down
 
-    def get_security_bars(self, market=Market.SH, code='600600', category=KlineCategory.DAY) -> pd.DataFrame:
+    def get_security_bars(self, market=Market.SH, code='600600', category=Period.DAILY) -> pd.DataFrame:
         """获取 K 线数据（最多800条/次，按 start 分页）。"""
         bars = []
         for page in range(30):
             pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market),
                               code.encode("utf-8"), int(category), 1, page * 800, 800, 0, 0, 0)
             body = self._execute(pkg)
-            ret_count = unpack_from("<H", body, 0, "security_bars header")[0]
+            ret_count = struct.unpack_from("<H", body, 0)[0]
             pos = 2
             pre_diff_base = 0
             cat = int(category)
@@ -1637,13 +1536,13 @@ class TdxClient(Client):
                 break
         return pd.DataFrame(bars)
 
-    def get_index_bars(self, market=Market.SH, code='000001', category=KlineCategory.DAY, start=0,
+    def get_index_bars(self, market=Market.SH, code='000001', category=Period.DAILY, start=0,
                        count: int = 800) -> pd.DataFrame:
         """获取指数 K 线数据。"""
         pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market),
                           code.encode('utf8'), int(category), 1, start, count, 0, 0, 0)
         body = self._execute(pkg)
-        ret_count = unpack_from("<H", body, 0, "security_bars header")[0]
+        ret_count = struct.unpack_from("<H", body, 0)[0]
         pos = 2
         bars = []
         pre_diff_base = 0
@@ -1675,7 +1574,7 @@ class TdxClient(Client):
         pkg = bytes.fromhex("0c013000010 10d000d00b40f".replace(" ", "")) + struct.pack("<IB6s", date, int(market),
                                                                                         code.encode("utf-8"))
         body = self._execute(pkg)
-        num = unpack_from("<H", body, 0, "minute_time header")[0]
+        num = struct.unpack_from("<H", body, 0)[0]
         pos = 6  # 今日分时 skip=4，历史分时 skip=6
         last_price = 0
         bars = []
@@ -1696,15 +1595,14 @@ class TdxClient(Client):
         """获取当日逐笔成交（分页）。"""
         res = []
         for page in range(10):
-            pkg = bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", "")) + struct.pack("<H6sHH", int(market),
-                                                                                            code.encode("utf-8"),
+            pkg = bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", "")) + struct.pack("<H6sHH", int(market), code.encode("utf-8"),
                                                                                             page * 800, 800)
             body = self._execute(pkg)
-            num = unpack_from("<H", body, 0, "transaction header")[0]
+            num = struct.unpack_from("<H", body, 0)[0]
             pos = 2
             last_price = 0
             for _ in range(num):
-                tminutes = unpack_from("<H", body, pos, "trade time")[0]
+                tminutes = struct.unpack_from("<H", body, pos)[0]
                 hour, minute, pos = tminutes // 60, tminutes % 60, pos + 2
                 price_diff, pos = get_price(body, pos)
                 vol, pos = get_price(body, pos)
@@ -1728,11 +1626,11 @@ class TdxClient(Client):
                                                                                            code.encode("utf-8"),
                                                                                            page * 800, 800)
             body = self._execute(pkg)
-            num = unpack_from("<H", body, 0, "history_transaction header")[0]
+            num = struct.unpack_from("<H", body, 0)[0]
             pos = 6
             last_price = 0
             for _ in range(num):
-                tminutes = unpack_from("<H", body, pos, "trade time")[0]
+                tminutes = struct.unpack_from("<H", body, pos)[0]
                 hour, minute, pos = tminutes // 60, tminutes % 60, pos + 2
                 price_diff, pos = get_price(body, pos)
                 vol, pos = get_price(body, pos)
@@ -1758,7 +1656,7 @@ class TdxClient(Client):
             13: "送认购权证", 14: "送认沽权证", }
 
         pos = 9  # 跳过9字节（market+code+未知）
-        num = unpack_from("<H", body, pos, "xdxr_info header")[0]
+        num = struct.unpack_from("<H", body, pos)[0]
         pos += 2
 
         records = []
@@ -1767,16 +1665,16 @@ class TdxClient(Client):
             record_start = pos
 
             # Bug #1 修复：从当前 pos 读，而非 body[:7]
-            market_b, code_b = unpack_from("<B6s", body, pos, "xdxr_info record header")
+            market_b, code_b = struct.unpack_from("<B6s", body, pos)
             pos += 7
-            slice_bytes(body, pos, 1, "xdxr_info record padding")
+            bytes(body[pos: pos + 1])
             pos += 1  # 跳过1个未知字节
 
             year, month, day, _hour, _min, pos = get_datetime(9, body, pos)
-            category = unpack_from("<B", body, pos, "xdxr_info category")[0]
+            category = struct.unpack_from("<B", body, pos)[0]
             pos += 1
 
-            chunk = slice_bytes(body, pos, 16, "xdxr_info record body")
+            chunk = bytes(body[pos: pos + 16])
             pos += 16
             rec = Dot(code=code_b.decode("utf-8").rstrip("\x00"), date=datetime(year=year, month=month,
                                                                                 day=day), category=category,
@@ -1798,10 +1696,10 @@ class TdxClient(Client):
             else:
                 # 股本变动类：4个 uint32，代表前后流通/总股本
                 ql_raw, qz_raw, hl_raw, hz_raw = struct.unpack("<IIII", chunk)
-                rec.panqian_liutong = _decode_share_count(ql_raw)
-                rec.qian_zongguben = _decode_share_count(qz_raw)
-                rec.panhou_liutong = _decode_share_count(hl_raw)
-                rec.hou_zongguben = _decode_share_count(hz_raw)
+                rec.panqian_liutong = _decode_volume(ql_raw)
+                rec.qian_zongguben = _decode_volume(qz_raw)
+                rec.panhou_liutong = _decode_volume(hl_raw)
+                rec.hou_zongguben = _decode_volume(hz_raw)
 
             records.append(dict(rec))
 
@@ -1818,19 +1716,19 @@ class TdxClient(Client):
                 '资本公积金', '净资产', '主营收入',
                 '主营利润', '应收账款', '营业利润', '投资收益', '经营现金流', '总现金流', '存货', '利润总额',
                 '税后利润', '净利润', '未分配利润', '每股净资产', '保留']
-        return dict(zip(keys, struct.unpack(fmt, slice_bytes(body, 9, struct.calcsize(fmt), "finance_info body"))))
+        return dict(zip(keys, struct.unpack(fmt, bytes(body[9: 9 + struct.calcsize(fmt)]))))
 
     def get_company_info_category(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取公司信息文件目录。"""
         pkg = bytes.fromhex("0c0f109b00010e000e00cf02".replace(" ", "")) + struct.pack("<H6sI", int(market),
                                                                                        code.encode('utf8'), 0)
         body = self._execute(pkg)
-        num = unpack_from("<H", body, 0, "company_info_category header")[0]
+        num = struct.unpack_from("<H", body, 0)[0]
         pos = 2
         results = []
         _RECORD_SIZE = 152
         for _ in range(num):
-            raw = slice_bytes(body, pos, _RECORD_SIZE, "company_info_category record")
+            raw = bytes(body[pos: pos + _RECORD_SIZE])
             name_b, filename_b, start, length = struct.unpack("<64s80sII", raw)
             pos += _RECORD_SIZE
             nul = name_b.find(b"\x00")
@@ -1847,8 +1745,8 @@ class TdxClient(Client):
                                                                                                                  :80],
                                                                                         0, 100000, 0)
         body = self._execute(pkg)
-        _, length = unpack_from("<10sH", body, 0, "company_info_content header")
-        content = slice_bytes(body, 12, length, "company_info_content body")
+        _, length = struct.unpack_from("<10sH", body, 0)
+        content = bytes(body[12: 12 + length])
         return content.decode("gbk", errors="replace")
 
     def get_block_info(self) -> pd.DataFrame:
@@ -1932,7 +1830,7 @@ class TdxClient(Client):
 
     def get_history_fund_flow(self, market=Market.SH, code='600600') -> pd.DataFrame:
         """获取个股历史日线资金流向序列 """
-        bars = self.get_security_bars(market, code, KlineCategory.DAY)
+        bars = self.get_security_bars(market, code, Period.DAILY)
         results = []
         for i, bar in bars.T.items():
             date = bar.year * 10000 + bar.month * 100 + bar.day
@@ -1980,7 +1878,7 @@ class ExTdxClient(Client):
         body = self._execute(pkg)
         results = []
         if len(body) >= 2:
-            count = unpack_from("<H", body, 0, "ex markets count")[0]
+            count = struct.unpack_from("<H", body, 0)[0]
             pos = 2
             for _ in range(count):
                 if pos + 64 > len(body):
@@ -1999,7 +1897,7 @@ class ExTdxClient(Client):
         """获取扩展行情商品总数。"""
         pkg = bytes.fromhex("01 03 48 66 00 01 02 00 02 00 f0 23")
         body = self._execute(pkg)
-        return 0 if len(body) < 23 else int(unpack_from("<I", body, 19, "ex instrument count")[0])
+        return 0 if len(body) < 23 else int(struct.unpack_from("<I", body, 19)[0])
 
     def get_instrument_info(self):
         """获取商品信息列表（分页）。"""
@@ -2050,7 +1948,7 @@ class ExTdxClient(Client):
                     bid_vol4=bv4, bid_vol5=bv5, ask1=a1, ask2=a2, ask3=a3, ask4=a4, ask5=a5,
                     ask_vol1=av1, ask_vol2=av2, ask_vol3=av3, ask_vol4=av4, ask_vol5=av5)
 
-    def get_instrument_quote_list(self, market=Market.SH, category=KlineCategory.DAY, start: int = 0, count: int = 80):
+    def get_instrument_quote_list(self, market=Market.SH, category=Period.DAILY, start: int = 0, count: int = 80):
         """按类别获取商品行情列表。"""
         from collections import OrderedDict
         pkg = bytes.fromhex("01 c1 06 0b 00 02 0b 00 0b 00 00 24") + struct.pack("<BHHHH", int(market), 0, start, count,
@@ -2114,7 +2012,7 @@ class ExTdxClient(Client):
                 raise Exception(f"不支持的扩展行情类别: {category}")
         return results
 
-    def get_instrument_bars(self, category=KlineCategory.DAY, market=Market.SH, code='600600'):
+    def get_instrument_bars(self, category=Period.DAILY, market=Market.SH, code='600600'):
         """获取K线数据（扩展行情版本，支持期货/港股等）。"""
         results = []
         for page in range(10):
@@ -2304,7 +2202,7 @@ class MacExClient(Client):
         """获取扩展市场商品列表（期货合约/港股/美股等）"""
         pkg = bytes.fromhex("01 03 48 66 00 01 02 00 02 00 f0 23")
         body = self._execute(pkg)
-        total = 0 if len(body) < 23 else int(unpack_from("<I", body, 19, "ex instrument count")[0])
+        total = 0 if len(body) < 23 else int(struct.unpack_from("<I", body, 19)[0])
         print(total)
         res = []
         count = 0
@@ -2336,7 +2234,7 @@ class MacExClient(Client):
         body += struct.pack("<H", len(stocks))
         for market, code in stocks:
             body += struct.pack("<H22s", market, code.encode("gbk"))
-        pkg = build_mac_request(0x122B, bytes(body))
+        pkg = self.build_mac_request(0x122B, bytes(body))
         return self._parse_quotes(self._execute(pkg))
 
     def goods_quotes_list(self, market: ExMarket, start: int = 0, count: int = 80) -> pd.DataFrame:
@@ -2351,7 +2249,7 @@ class MacExClient(Client):
         return self.goods_quotes(stocks)
 
     def goods_kline(self, market: int, code: str, period: Period = Period.DAILY,
-                    adjust: Adjust = Adjust.NONE) -> pd.DataFrame:
+                    adjust=False) -> pd.DataFrame:
         """获取扩展市场 K 线数据（支持复权）。
 
         Parameters
@@ -2366,16 +2264,15 @@ class MacExClient(Client):
             起始偏移（0=最新）。
         count : int
             返回条数。
-        adjust : Adjust
-            复权方式（NONE/QFQ/HFQ）。
+            复权方式（NONE/QFQ）。
         """
         results = []
         for page in range(10):
-            pkg = build_mac_request(0x122E,
+            pkg = self.build_mac_request(0x122E,
                                     struct.pack("<H22sHH I HH bbb bH4s", int(market), code.encode("gbk"), int(period),
                                                 1, 700 * page, 700, int(adjust), 1, 1, 0, 1, 0, b""))
             body = self._execute(pkg)
-            (category_flag, _flag, count, start) = unpack_from("<HBHI", body, 24, "symbol_bar header")
+            (category_flag, _flag, count, start) = struct.unpack_from("<HBHI", body, 24)
             count = min(count, (len(body) - 33) // 36)
             if count < 0:
                 count = 0
@@ -2383,8 +2280,7 @@ class MacExClient(Client):
                 offset = 33 + i * 36
                 if offset + 36 > len(body):
                     break
-                (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = unpack_from("<II7f", body, offset,
-                                                                                                  f"symbol_bar bar[{i}]")
+                (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = struct.unpack_from("<II7f", body, offset)
                 if ymd < 19900101 or ymd > 20991231:
                     continue
                 year = ymd // 10000
@@ -2401,23 +2297,22 @@ class MacExClient(Client):
 
     def goods_tick_chart(self, market=ExMarket.HK_MAIN_BOARD, code='00616', query_date=0) -> pd.DataFrame:
         """获取单日分时图 """
-        pkg = build_mac_request(0x122D,
+        pkg = self.build_mac_request(0x122D,
                                 struct.pack("<H22sI5H", int(market), code.encode("gbk"), query_date, 1, 0, 0, 0, 0))
         body = self._execute(pkg)
-        (market, code_raw, query_date, reserved, ref_price, count) = unpack_from("<H22sIBfH", body, 0,
-                                                                                 "tick_chart header")
+        (market, code_raw, query_date, reserved, ref_price, count) = struct.unpack_from("<H22sIBfH", body, 0)
         ticks = []
         for i in range(count):
             offset = 35 + i * 18
-            (minutes, price, avg, vol, momentum) = unpack_from("<HffIf", body, offset, f"tick_chart tick[{i}]")
+            (minutes, price, avg, vol, momentum) = struct.unpack_from("<HffIf", body, offset)
             ticks.append(
                 dict(time=Time(minutes // 60 % 24, minutes % 60), price=price, avg=avg, vol=vol, momentum=momentum))
 
         # 尾部元数据
         tail_offset = 35 + count * 18
         (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
-         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = unpack_from(
-            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset, "tick_chart tail")
+         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = struct.unpack_from(
+            "<44sBHf5x2I5ffIf12s2fI", body, tail_offset)
 
         return Dot(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
                    name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
@@ -2426,18 +2321,16 @@ class MacExClient(Client):
 
     def goods_chart_sampling(self, market: int, code: str) -> pd.DataFrame:
         """获取分时缩略采样价格点（约 240 个点） """
-        pkg = build_mac_request(0x254D,
+        pkg = self.build_mac_request(0x254D,
                                 struct.pack("<H22sHH9x", market, (code.encode("gbk") + b"\x00" * 22)[:22], 1, 20))
         body = self._execute(pkg)
         sz = 42
         prices: list[float] = []
         if len(body) >= sz:
-            require_bytes(body, 0, sz, "ChartSamplingCmd header")
-            count = unpack_from("<H", body, 40, "chart_sampling count")[0]
+            count = struct.unpack_from("<H", body, 40)[0]
             for i in range(count):
                 pos = sz + i * 4
-                require_bytes(body, pos, 4, f"ChartSamplingCmd price[{i}]")
-                (p,) = unpack_from("<f", body, pos, f"chart_sampling price[{i}]")
+                (p,) = struct.unpack_from("<f", body, pos)
                 prices.append(p)
         return pd.Series(prices)
 
@@ -2445,15 +2338,14 @@ class MacExClient(Client):
         """获取逐笔成交数据。"""
         results = []
         for page in range(20):
-            pkg = build_mac_request(0x122F,
+            pkg = self.build_mac_request(0x122F,
                                     struct.pack("<H22sIIH10x", int(market), code.encode("gbk"), date, page * 2000,
                                                 2000))
             body = self._execute(pkg)
-            count = unpack_from("<H", body, 29, "transaction count")[0]
+            count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
                 offset = 39 + i * 18
-                (time_sec, price, volume, trade_count, bs_flag) = unpack_from("<IfIIH", body, offset,
-                                                                              f"transaction item[{i}]")
+                (time_sec, price, volume, trade_count, bs_flag) = struct.unpack_from("<IfIIH", body, offset)
                 sig = 1 if bs_flag == 0 else -1 if bs_flag == 1 else 0 if bs_flag == 2 else 2
                 results.append(dict(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price,
                                     vol=volume, trade_count=trade_count, sig=sig))
