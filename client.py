@@ -776,7 +776,7 @@ class MacClient(Client):
             count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
                 (t, price, volume, trade_count, f) = struct.unpack_from("<IfIIH", body, 39 + i * 18)
-                results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=volume, trade_count=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
+                results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=volume, trade=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
             if count < 1000:
                 break
         return pd.DataFrame(results)
