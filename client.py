@@ -1383,5 +1383,10 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with ExTdxClient() as c:
+        f = c.get_instrument_count()
+        s = c.get_markets()
+        print('')
+
+    with ExTdxClient() as c:
         d = c.get_markets()
         print('over')
