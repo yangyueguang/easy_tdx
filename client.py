@@ -149,7 +149,7 @@ class FieldBit(IntEnum):
     CLOSE = 0x04, "<f", "收盘价"
     VOL = 0x05, "<I", "成交量"
     VOL_RATIO = 0x06, "<f", "量比"
-    AMOUNT = 0x07, "<f", "总金额(元)"
+    MONEY = 0x07, "<f", "总金额(元)"
     EPS = 0x0C, "<f", "每股收益"
     NET_ASSETS = 0x0D, "<f", "净资产"
     PE_DYNAMIC = 0x10, "<f", "市盈率(动)"
@@ -163,14 +163,14 @@ class FieldBit(IntEnum):
     OPERATING_REVENUE = 0x2A, "<f", "营业收入(万)"
     PE_TTM = 0x30, "<f", "市盈率TTM"
     PE_STATIC = 0x31, "<f", "市盈率静"
-    MAIN_NET_AMOUNT = 0x38, "<f", "今日主力净流入"
+    MAIN_NET_MONEY = 0x38, "<f", "今日主力净流入"
     BID_ASK_RATIO = 0x39, "<f", "委比"
     ACTIVITY = 0x59, "<I", "活跃度"
     DIVIDEND_YIELD_RATE = 0x5B, "<f", "股息率%"
     LIMIT_UP_COUNT = 0x5D, "<I", "涨停数(板块) / 买二量(个股)"
     LIMIT_DOWN_COUNT = 0x5E, "<I", "跌停数(板块) / 卖二量(个股)"
     INDUSTRY_SUB = 0x5F, "<I", "行业二级分类"
-    MAIN_BUY_NET_AMOUNT = 0x72, "<f", "今日主买净额"
+    MAIN_BUY_NET_MONEY = 0x72, "<f", "今日主买净额"
     UP_COUNT = 0x88, "<I", "上涨家数(板块) / 买五量(个股)"
     DOWN_COUNT = 0x8B, "<I", "下跌家数(板块) / 卖五量(个股)"
     BID_ASK_DIFF = 0x8C, "<i", "委差"
@@ -178,13 +178,13 @@ class FieldBit(IntEnum):
 
 class PresetField(Enum):
     """预定义字段集合，支持 + / | 链式组合 """
-    BASIC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.PRE_CLOSE, FieldBit.VOL, FieldBit.AMOUNT, FieldBit.TURNOVER, FieldBit.VOL_RATIO)
+    BASIC = (FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.PRE_CLOSE, FieldBit.VOL, FieldBit.MONEY, FieldBit.TURNOVER, FieldBit.VOL_RATIO)
     BOARD_STATS = (FieldBit.LIMIT_UP_COUNT, FieldBit.LIMIT_DOWN_COUNT, FieldBit.UP_COUNT, FieldBit.DOWN_COUNT)
     COMMON = (
     FieldBit.PRE_CLOSE, FieldBit.OPEN, FieldBit.HIGH, FieldBit.LOW, FieldBit.CLOSE, FieldBit.VOL, FieldBit.VOL_RATIO,
-    FieldBit.AMOUNT, FieldBit.EPS, FieldBit.NET_ASSETS, FieldBit.PE_DYNAMIC, FieldBit.DIVIDEND_YIELD, FieldBit.TURNOVER,
+    FieldBit.MONEY, FieldBit.EPS, FieldBit.NET_ASSETS, FieldBit.PE_DYNAMIC, FieldBit.DIVIDEND_YIELD, FieldBit.TURNOVER,
     FieldBit.DECIMAL_POINT, FieldBit.BUY_PRICE_LIMIT, FieldBit.SELL_PRICE_LIMIT, FieldBit.PE_TTM, FieldBit.PE_STATIC,
-    FieldBit.MAIN_NET_AMOUNT, FieldBit.TURNOVER, FieldBit.ACTIVITY)
+    FieldBit.MAIN_NET_MONEY, FieldBit.TURNOVER, FieldBit.ACTIVITY)
 
     def __add__(self, other: object):
         if isinstance(other, (FieldBit, PresetField, FieldSelection)):
@@ -892,8 +892,13 @@ class MacClient(Client):
                     break
         return pd.DataFrame(results)
 
-    def get_goods_list(self, market=0):
-        """获取扩展市场（期货/期权等）商品列表。       """
+    def market_stat(self):
+        quotes = self.nows(["880005", "880001", "880006"])
+        q = quotes.iloc[0]
+        return dict(up=int(q.close), down=int(q.open), neutral=int(q.low), total=int(q.high), money=q.money, vol=q.vol, total_market_cap=quotes.iloc[1].close * 1e10, limit_up=int(quotes.iloc[2].close), limit_down=int(quotes.iloc[2].open))
+
+    def get_goods_list(self, market: ExMarket):
+        """获取扩展市场（期货/期权等）#TODO 错误🙅"""
         items = []
         for page in range(100):
             pkg = self.build_mac_request(0x2562, struct.pack("<HII", int(market), page * 1000, 1000))
@@ -906,120 +911,11 @@ class MacClient(Client):
                 break
         return pd.DataFrame(items)
 
-
-class TdxClient(Client):
-    def get_security_quotes(self, stocks: list[tuple[Market, str]]):
-        """批量获取实时五档行情（最多80只/次）。"""
-        n = len(stocks)
-        header = struct.pack("<HIHHIIHH", 0x010C, 0x02006320, n * 7 + 12, n * 7 + 12, 0x0005053E, 0, 0, n)
-        body = bytearray(header)
-        for market, code in stocks:
-            body.extend(struct.pack("<B6s", int(market), code.encode("utf-8")))
-        body = self._execute(bytes(body))
-        pos = 0
-        pos += 2
-        (num,) = struct.unpack_from("<H", body, pos)
-        pos += 2
-        results = []
-        for _ in range(num):
-            market_b, code_b, active1 = struct.unpack_from("<B6sH", body, pos)
-            pos += 9
-            price_raw, pos = get_price(body, pos)
-            last_close_diff, pos = get_price(body, pos)
-            open_diff, pos = get_price(body, pos)
-            high_diff, pos = get_price(body, pos)
-            low_diff, pos = get_price(body, pos)
-            unknown_0, pos = get_price(body, pos)
-            unknown_1, pos = get_price(body, pos)
-            vol, pos = get_price(body, pos)
-            cur_vol, pos = get_price(body, pos)
-            money = _decode_vol(struct.unpack_from("<I", body, pos)[0])
-            pos += 4
-            s_vol, pos = get_price(body, pos)
-            b_vol, pos = get_price(body, pos)
-            unknown_2, pos = get_price(body, pos)  # IndexOpenAmount(指数)/舍入残差(个股)
-            unknown_3, pos = get_price(body, pos)  # StockOpenAmount(个股)/负值(指数)
-            # 五档买盘
-            bid1_d, pos = get_price(body, pos)
-            ask1_d, pos = get_price(body, pos)
-            bv1, pos = get_price(body, pos)
-            av1, pos = get_price(body, pos)
-            bid2_d, pos = get_price(body, pos)
-            ask2_d, pos = get_price(body, pos)
-            bv2, pos = get_price(body, pos)
-            av2, pos = get_price(body, pos)
-            bid3_d, pos = get_price(body, pos)
-            ask3_d, pos = get_price(body, pos)
-            bv3, pos = get_price(body, pos)
-            av3, pos = get_price(body, pos)
-            bid4_d, pos = get_price(body, pos)
-            ask4_d, pos = get_price(body, pos)
-            bv4, pos = get_price(body, pos)
-            av4, pos = get_price(body, pos)
-            bid5_d, pos = get_price(body, pos)
-            ask5_d, pos = get_price(body, pos)
-            bv5, pos = get_price(body, pos)
-            av5, pos = get_price(body, pos)
-            (trading_status,) = struct.unpack_from("<H", body, pos)
-            pos += 2
-            unknown_5, pos = get_price(body, pos)
-            unknown_6, pos = get_price(body, pos)
-            unknown_7, pos = get_price(body, pos)
-            unknown_8, pos = get_price(body, pos)
-            rise_speed_raw, active2 = struct.unpack_from("<hH", body, pos)
-            pos += 4
-            p = price_raw / 100.0
-            raw = unknown_0
-            hours, fractional_hour = divmod(raw, 1_000_000)
-            total_millis = fractional_hour * 3600 // 1000
-            minutes, remainder = divmod(total_millis, 60_000)
-            seconds, millis = divmod(remainder, 1000)
-            results.append(dict(code=code_b.decode("utf-8").rstrip("\x00"), price=p,
-                                pre_close=(price_raw + last_close_diff) / 100.0,
-                                open=(price_raw + open_diff) / 100.0,
-                                high=(price_raw + high_diff) / 100.0,
-                                low=(price_raw + low_diff) / 100.0, vol=float(vol),
-                                cur_vol=float(cur_vol), money=money, s_vol=float(s_vol),
-                                b_vol=float(b_vol), active1=active1, active2=active2,
-                                bid1=(price_raw + bid1_d) / 100.0, bid_vol1=float(bv1),
-                                bid2=(price_raw + bid2_d) / 100.0, bid_vol2=float(bv2),
-                                bid3=(price_raw + bid3_d) / 100.0, bid_vol3=float(bv3),
-                                bid4=(price_raw + bid4_d) / 100.0, bid_vol4=float(bv4),
-                                bid5=(price_raw + bid5_d) / 100.0, bid_vol5=float(bv5),
-                                ask1=(price_raw + ask1_d) / 100.0, ask_vol1=float(av1),
-                                ask2=(price_raw + ask2_d) / 100.0, ask_vol2=float(av2),
-                                ask3=(price_raw + ask3_d) / 100.0, ask_vol3=float(av3),
-                                ask4=(price_raw + ask4_d) / 100.0, ask_vol4=float(av4),
-                                ask5=(price_raw + ask5_d) / 100.0, ask_vol5=float(av5),
-                                rise_speed=rise_speed_raw / 100.0, limit_up=None, limit_down=None,
-                                unknown_2=unknown_2, unknown_3=unknown_3, unknown_5=unknown_5,
-                                unknown_6=unknown_6, unknown_7=unknown_7, unknown_8=unknown_8,
-                                server_time=f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}",
-                                trading_status=trading_status, open_money=unknown_3 * 100.0))
-        return pd.DataFrame(results)
-
-    def get_price_limits(self, market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
-        """按当前交易状态计算涨跌停价"""
-        if pre_close <= 0 or (market == Market.SH and code.startswith(
-                ("000", "880", "881", "882", "883", "884", "885", "999"))) or (
-                market == Market.SZ and code.startswith(("395", "399"))) or "指数" in name or "板块" in name:
-            return None, None
-        limit_pct = 0.10
-        if "ST" in name.upper():
-            limit_pct = 0.05
-        elif code.startswith("688") or code.startswith("300") or code.startswith("301"):
-            limit_pct = 0.20
-        elif code.startswith(("43", "83", "87", "92")):
-            limit_pct = 0.30
-        limit_up = round(pre_close * (1 + limit_pct) + 0.00001, 2)
-        limit_down = round(pre_close * (1 - limit_pct) + 0.00001, 2)
-        return limit_up, limit_down
-
-    def get_security_bars(self, market=Market.SH, code='600600', category=Period.DAILY):
-        """获取 K 线数据（最多800条/次，按 start 分页）。"""
+    def get_security_bars(self, code='600600', category=Period.DAILY):
+        """获取 K 线数据"""
         bars = []
         for page in range(30):
-            pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market),
+            pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, get_market(code),
                               code.encode("utf-8"), int(category), 1, page * 800, 800, 0, 0, 0)
             body = self._execute(pkg)
             ret_count = struct.unpack_from("<H", body, 0)[0]
@@ -1275,21 +1171,6 @@ class TdxClient(Client):
                 pos += 2813
         return pd.DataFrame(results)
 
-    def get_market_stat(self):
-        # 通达信中 880005 是全市场行情统计，880001 是总市值指数，880006 是涨跌停统计
-        quotes = self.get_security_quotes([(Market.SH, "880005"), (Market.SH, "880001"), (Market.SH, "880006")])
-        q = quotes.iloc[0]
-        up = int(q.price)
-        down = int(q.open)
-        neutral = int(q.low)
-        total = int(q.high)
-        market_cap = quotes.iloc[1].price * 1e10
-        limit_down = int(quotes.iloc[2].open)
-        limit_up = int(quotes.iloc[2].price)
-        return dict(up_count=up, down_count=down, neutral_count=neutral,
-                    suspended_count=max(0, total - up - down - neutral), total_count=total, total_money=q.money,
-                    total_vol=q.vol, total_market_cap=market_cap, limit_up_count=limit_up,
-                    limit_down_count=limit_down)
 
     def get_fund_flow(self, market=Market.SH, code='600600'):
         """获取个股当日资金流向分布（基于 L1 逐笔数据统计）。"""
@@ -1802,5 +1683,7 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with MacClient() as c:
-        df = c.get_goods_list()
+        df = c.get_security_bars()
+        s = c.nows(["880005", "880001", "880006"])
+        print(len(df))
         print('over')
