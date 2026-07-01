@@ -13,7 +13,7 @@ from datetime import datetime, time as Time
 HEADER_SIZE: int = 16
 config = {
     "best_host": '121.37.207.165',
-    "best_ex_host": '',
+    "best_ex_host": '159.75.90.107',
     "best_mac_ex_host": '',
     "known_hosts": [
         "111.229.247.189", "150.158.160.2", "180.153.18.170", "124.71.187.122", "180.153.18.171", "180.153.18.172",
@@ -541,9 +541,9 @@ class ExTdxConnection:
             if self._sock is None:
                 raise Exception("未连接，请先调用 connect()")
             if self.mac_ex_mode and len(pkg) > 0 and pkg[0] == 0x1C:
-                request = b"\x01" + pkg[1:]
+                pkg = b"\x01" + pkg[1:]
             try:
-                self._sock.sendall(request)
+                self._sock.sendall(pkg)
                 header_buf = self._recv_exact(HEADER_SIZE)
                 header = parse_header(header_buf)
                 raw_body = self._recv_exact(header.zipsize)
@@ -936,7 +936,7 @@ class ExTdxClient(Client):
 
     def get_markets(self):
         """获取扩展行情支持的市场列表。"""
-        pkg = bytes.fromhex("01 02 48 69 00 01 02 00 02 00 f4 23")
+        pkg = bytes.fromhex("01024869000102000200f423")
         body = self._execute(pkg)
         results = []
         if len(body) >= 2:
@@ -954,12 +954,6 @@ class ExTdxClient(Client):
                 short_name = raw_short_name.decode("gbk", errors="replace").rstrip("\x00")
                 results.append(dict(market=market, category=category, name=name, short_name=short_name))
         return results
-
-    def get_instrument_count(self) -> int:
-        """获取扩展行情商品总数。"""
-        pkg = bytes.fromhex("01 03 48 66 00 01 02 00 02 00 f0 23")
-        body = self._execute(pkg)
-        return 0 if len(body) < 23 else int(struct.unpack_from("<I", body, 19)[0])
 
     def get_instrument_info(self):
         """获取商品信息列表（分页）。"""
@@ -987,7 +981,7 @@ class ExTdxClient(Client):
                 break
         return pd.DataFrame(res)
 
-    def get_instrument_quote(self, market=Market.SH, code='600600'):
+    def get_instrument_quote(self, market=ExMarket.HK_MAIN_BOARD, code='00700'):
         """获取单个商品五档实时行情。"""
         pkg = bytes.fromhex("01 01 08 02 02 01 0c 00 0c 00 fa 23") + struct.pack("<B9s", int(market), code.encode("utf-8"))
         body = self._execute(pkg)
@@ -1008,7 +1002,7 @@ class ExTdxClient(Client):
                     bid_vol4=bv4, bid_vol5=bv5, ask1=a1, ask2=a2, ask3=a3, ask4=a4, ask5=a5,
                     ask_vol1=av1, ask_vol2=av2, ask_vol3=av3, ask_vol4=av4, ask_vol5=av5)
 
-    def get_instrument_quote_list(self, market=Market.SH, category=Period.DAILY, start: int = 0, count: int = 80):
+    def get_instrument_quote_list(self, market=ExMarket.HK_MAIN_BOARD, category=Period.DAILY, start: int = 0, count: int = 80):
         """按类别获取商品行情列表。"""
         from collections import OrderedDict
         pkg = bytes.fromhex("01 c1 06 0b 00 02 0b 00 0b 00 00 24") + struct.pack("<BHHHH", int(market), 0, start, count, 1)
@@ -1070,7 +1064,7 @@ class ExTdxClient(Client):
                 raise Exception(f"不支持的扩展行情类别: {category}")
         return results
 
-    def get_instrument_bars(self, category=Period.DAILY, market=Market.SH, code='600600'):
+    def get_instrument_bars(self, category=Period.DAILY, market=ExMarket.HK_MAIN_BOARD, code='00700'):
         """获取K线数据（扩展行情版本，支持期货/港股等）。"""
         results = []
         for page in range(10):
@@ -1096,7 +1090,7 @@ class ExTdxClient(Client):
                     break
         return pd.DataFrame(results)
 
-    def get_history_instrument_bars_range(self, market=Market.SH, code='600600', start_date=20250101,
+    def get_history_instrument_bars_range(self, market=ExMarket.HK_MAIN_BOARD, code='00700', start_date=20250101,
                                           end_date=20500101):
         """按日期范围获取历史K线。"""
         if not hasattr(self, '_seqid'):
@@ -1127,7 +1121,7 @@ class ExTdxClient(Client):
                                     money=settlement, year=year, month=month, day=day, hour=hour, minute=minute))
             return pd.DataFrame(results)
 
-    def get_minute_time_data(self, market: int, code: str) -> list:
+    def get_minute_time_data(self, market=ExMarket.HK_MAIN_BOARD, code='00700') -> list:
         """获取当日分时行情数据。"""
         pkg = bytes.fromhex("01 07 08 00 01 01 0c 00 0c 00 0b 24") + struct.pack("<B9s", int(market),
                                                                                  code.encode("utf-8"))
@@ -1149,7 +1143,7 @@ class ExTdxClient(Client):
                          open_interest=money))
         return results
 
-    def get_history_minute_time_data(self, market: int, code: str, date: int) -> list:
+    def get_history_minute_time_data(self, market=ExMarket.HK_MAIN_BOARD, code='00700', date=20260630) -> list:
         """获取历史某日分时行情数据（date: YYYYMMDD）。"""
         pkg = bytes.fromhex("01 01 30 00 01 01 10 00 10 00 0c 24") + struct.pack("<IB9s", date, int(market), code.encode("utf-8"))
         body = self._execute(pkg)
@@ -1169,7 +1163,7 @@ class ExTdxClient(Client):
                                     open_interest=money))
         return results
 
-    def get_transaction_data(self, market: int, code: str) -> list:
+    def get_transaction_data(self, market=ExMarket.HK_MAIN_BOARD, code='00700') -> list:
         """获取当日分笔成交数据。"""
         results = []
         for page in range(20):
@@ -1198,7 +1192,7 @@ class ExTdxClient(Client):
                 break
         return results
 
-    def get_history_transaction_data(self, market: int, code: str, date: int) -> list:
+    def get_history_transaction_data(self, market=ExMarket.HK_MAIN_BOARD, code='00700', date=20260630) -> list:
         """获取历史某日分笔成交数据（date: YYYYMMDD）。"""
         results = []
         for page in range(30):
@@ -1383,8 +1377,7 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with ExTdxClient() as c:
-        f = c.get_instrument_count()
-        s = c.get_markets()
+        s = c.get_instrument_quote_list()
         print('')
 
     with ExTdxClient() as c:
