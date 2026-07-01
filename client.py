@@ -345,7 +345,7 @@ def get_price(data: bytes, pos: int) -> tuple[int, int]:
     return (-value if negative else value), pos
 
 
-def _decode_volume(ivol: int) -> float:
+def _decode_vol(ivol: int) -> float:
     def _pow2(exp: int) -> float:
         if exp >= 0:
             return float(1 << exp) if exp < 63 else 2.0 ** exp
@@ -775,259 +775,133 @@ class MacClient(Client):
             body = self._execute(pkg)
             count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
-                (t, price, volume, trade_count, f) = struct.unpack_from("<IfIIH", body, 39 + i * 18)
-                results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=volume, trade=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
+                (t, price, vol, trade_count, f) = struct.unpack_from("<IfIIH", body, 39 + i * 18)
+                results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=vol, trade=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
             if count < 1000:
                 break
         return pd.DataFrame(results)
 
-    def get_symbol_info(self, code='600600'):
+    def now(self, code='600600'):
         """获取个股简要特征快照"""
         pkg = self.build_mac_request(0x122A, struct.pack("<H22sI12x", get_market(code), code.encode("gbk"), 1))
         body = self._execute(pkg)
         (market, code_raw, name_raw) = struct.unpack_from("<H22s44s", body, 8)
-        (date_raw, time_raw, activity, pre_close, open, high, low, close, momentum, vol, amount, inside_volume,
-         outside_volume) = struct.unpack_from("<III5ffIfII", body, 96)
+        (d, t, activity, pre_close, _open, high, low, close, _, vol, money, inside_vol, outside_vol) = struct.unpack_from("<III5ffIfII", body, 96)
         (_decimal, _a, _b, _c, _vr, turnover, avg) = struct.unpack_from("<HIf20xI3f", body, 148)
-        dt = datetime(date_raw // 10000, (date_raw % 10000) // 100, date_raw % 100, time_raw // 10000,
-                      (time_raw % 10000) // 100, time_raw % 100)
-        return dict(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
-                    name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), time=dt,
-                    activity=activity, pre_close=pre_close, open=open, high=high, low=low, close=close,
-                    momentum=momentum, vol=int(vol), amount=amount, inside_volume=inside_volume,
-                    outside_volume=outside_volume, turnover=turnover, avg=avg)
+        dt = datetime(d // 10000, (d % 10000) // 100, d % 100, t // 10000, (t % 10000) // 100, t % 100)
+        return dict(code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""), name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""), date=dt,
+                    activity=activity, yclose=pre_close, open=_open, high=high, low=low, close=close, vol=int(vol), money=money, inside=inside_vol,
+                    outside=outside_vol, turnover=turnover, avg=avg)
 
-    def get_belong_board(self, market=Market.SH, code='600600'):
-        """获取个股所属板块列表"""
-        pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", market, code.encode("gbk"), b"Stock_GLHQ"),
-                                head_flag=1)
-        body = self._execute(pkg)
-        json_bytes = body[27:]
-        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk", errors="replace"))
-        results = []
+    def flow(self, code='600600'):
+        """资金流向"""
+        pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", get_market(code), code.encode("gbk"), b"Stock_ZJLX"), head_flag=2)
+        return dict(zip(['main_in', 'main_out', 'small_in', 'small_out'], [float(i) for i in json.loads(self._execute(pkg)[27:].decode("gbk"))[0]]))
 
-        def _to_float(value: object) -> float:
-            try:
-                return float(value)  # type: ignore[arg-type]
-            except (ValueError, TypeError):
-                return 0.0
-
-        for row in python_list:
-            n = len(row)
-            if n not in (9, 13):
-                continue
-            try:
-                bt = int(row[0])
-                mkt = int(row[1])
-            except (ValueError, TypeError):
-                bt = mkt = 0
-            board_code = str(row[2])
-            board_name = str(row[3])
-            close = _to_float(row[4]) if n > 4 and row[4] else 0.0
-            pre_close = _to_float(row[5]) if n > 5 and row[5] else 0.0
-            results.append(
-                dict(board_type=bt, market=mkt, board_code=board_code, board_name=board_name,
-                     close=close, pre_close=pre_close))
-        return pd.DataFrame(results)
-
-    def get_capital_flow(self, market=Market.SH, code='600600'):
-        """获取个股资金流向"""
-        pkg = self.build_mac_request(0x1218, struct.pack("<H8s16x21s", int(market), code.encode("gbk"), b"Stock_ZJLX"), head_flag=2)
-        body = self._execute(pkg)
-        json_bytes = body[27:]
-        python_list: list[list[object]] = json.loads(json_bytes.decode("gbk"))
-        if len(python_list) < 2:
-            return None
-        today_data = python_list[0]
-        five_days_data = python_list[1]
-        def _to_float(value: object) -> float:
-            try:
-                return float(value)  # type: ignore[arg-type]
-            except (ValueError, TypeError):
-                return 0.0
-
-        main_in = _to_float(today_data[0]) if len(today_data) > 0 else 0.0
-        main_out = _to_float(today_data[1]) if len(today_data) > 1 else 0.0
-        retail_in = _to_float(today_data[2]) if len(today_data) > 2 else 0.0
-        retail_out = _to_float(today_data[3]) if len(today_data) > 3 else 0.0
-        mid_net_5d = _to_float(five_days_data[4]) if len(five_days_data) > 4 else 0.0
-        large_net_5d = _to_float(five_days_data[3]) if len(five_days_data) > 3 else 0.0
-        return dict(main_in=main_in, main_out=main_out, main_net=main_in - main_out,
-                    small_in=retail_in, small_out=retail_out, small_net=retail_in - retail_out,
-                    mid_in=0.0, mid_out=0.0, mid_net=mid_net_5d, large_in=0.0, large_out=0.0,
-                    large_net=large_net_5d)
-
-    def get_auction(self, market=Market.SH, code='600600'):
-        """获取集合竞价数据"""
+    def auction(self, code='000001'):
+        """集合竞价"""
         items = []
         for page in range(10):
-            pkg = self.build_mac_request(0x123D, struct.pack("<H22sII10x", int(market), code.encode("gbk"), page * 500, 500))
+            pkg = self.build_mac_request(0x123D, struct.pack("<H22sII10x", get_market(code), code.encode("gbk"), page * 500, 500))
             body = self._execute(pkg)
-            _market, _code, count = struct.unpack_from("<H22sI", body, 0)
+            count = struct.unpack_from("<H22sI", body, 0)[-1]
             for i in range(count):
-                offset = 36 + i * 16
-                if offset + 16 > len(body):
-                    break
-                time_sec, price, matched, unmatched = struct.unpack_from("<IfIi", body, offset)
-                items.append(dict(time=Time(time_sec // 3600, (time_sec % 3600) // 60, time_sec % 60), price=price, matched=matched, unmatched=unmatched))
+                t, price, matched, unmatched = struct.unpack_from("<IfIi", body, 36 + i * 16)
+                items.append(dict(time=Time(t // 3600, (t % 3600) // 60, t % 60), price=price, matched=matched, unmatched=unmatched))
             if count < 500:
                 break
         return pd.DataFrame(items)
 
-    def get_unusual(self, market: int = 0):
+    def unusual(self):
         """个股异动"""
-        dfs = []
-        for page in range(100):
-            body = self._execute(self.build_mac_request(0x1237, struct.pack("<HH2xH2xH5H", market % 3, page * 600, 600, 1, 200, 30, 40, 50, 200)))
-            count = struct.unpack_from("<H", body, 0)[0]
-            results = []
-            for i in range(count):
-                offset = 2 + i * 32
-                if offset + 32 > len(body):
+        results = []
+        for market in range(3):
+            for page in range(100):
+                body = self._execute(self.build_mac_request(0x1237, struct.pack("<HH2xH2xH5H", market, page * 600, 600, 1, 200, 30, 40, 50, 200)))
+                count = struct.unpack_from("<H", body, 0)[0]
+                names = body[2 + count * 32:].decode("gbk", errors="ignore").strip(",").split(",")
+                for i in range(count):
+                    offset = 2 + i * 32
+                    market, code_raw, _, tp, _, index, _z = struct.unpack_from("<H6sBBBHH", body, offset)
+                    data = body[offset + 15: offset + 28]
+                    desc = val = ''
+                    if len(data) >= 13:
+                        v1, v2, v3, v4 = struct.unpack_from("<B2fI", data)
+                        if tp == 3:
+                            desc = f"主力{'买入' if v1 == 0 else '卖出'}"
+                            val = f"{v2:.2f}/{v3:.2f}"
+                        elif tp == 4:
+                            desc = "加速拉升"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 5:
+                            desc = "加速下跌"
+                        elif tp == 6:
+                            desc = "低位反弹"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 7:
+                            desc = "高位回落"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 8:
+                            desc = "撑杆跳高"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 9:
+                            desc = "平台跳水"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 10:
+                            desc = f"单笔冲{'跌' if v2 < 0 else '涨'}"
+                            val = f"{v2 * 100:.2f}%"
+                        elif tp == 11:
+                            direction = "平" if v3 == 0 else "跌" if v3 < 0 else "涨"
+                            desc = f"区间放量{direction}"
+                            val = f"{v2:.1f}倍" + ("" if v3 == 0 else f"{v3 * 100:.2f}%")
+                        elif tp == 12:
+                            desc = "区间缩量"
+                        elif tp == 16:
+                            desc = "大单托盘"
+                            val = f"{v4:.2f}/{v3:.2f}"
+                        elif tp == 17:
+                            desc = "大单压盘"
+                            val = f"{v2:.2f}/{v3:.2f}"
+                        elif tp == 18:
+                            desc = "大单锁盘"
+                        elif tp == 19:
+                            desc = "竞价试买"
+                            val = f"{v2:.2f}/{v3:.2f}"
+                        elif tp == 20:
+                            direction = "涨" if v1 == 0 else "跌"
+                            if len(data) >= 10:
+                                sub_type, v2_alt, v3_alt = struct.unpack_from("<Bff", data, 1)
+                            else:
+                                sub_type, v2_alt, v3_alt = 0, 0.0, 0.0
+                            if sub_type == 1:
+                                desc = f"逼近{direction}停"
+                            elif sub_type == 2:
+                                desc = f"封{direction}停板"
+                            elif sub_type == 4:
+                                desc = f"封{direction}大减"
+                            elif sub_type == 5:
+                                desc = f"打开{direction}停"
+                            else:
+                                desc = f"涨跌停({direction})"
+                            val = f"{v2_alt:.2f}/{v3_alt:.2f}"
+                        else:
+                            desc = f"异动类型{tp:#04x}"
+                    hour, t = struct.unpack_from("<BH", body, offset + 29)
+                    results.append(dict(index=index, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"), name=names[i] if i < len(names) else '', time=Time(hour, t // 100, t % 100), desc=desc, value=val, type=tp))
+                if count < 600:
                     break
-                market, code_raw, _, unusual_type, _, index, _z = struct.unpack_from("<H6sBBBHH", body, offset)
-                data = body[offset + 15: offset + 28]
-                desc = val = ''
-                if len(data) >= 13:
-                    v1, v2, v3, v4 = struct.unpack_from("<B2fI", data)
-                    if unusual_type == 0x03:
-                        desc = f"主力{'买入' if v1 == 0x00 else '卖出'}"
-                        val = f"{v2:.2f}/{v3:.2f}"
-                    elif unusual_type == 0x04:
-                        desc = "加速拉升"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x05:
-                        desc = "加速下跌"
-                        val = ""
-                    elif unusual_type == 0x06:
-                        desc = "低位反弹"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x07:
-                        desc = "高位回落"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x08:
-                        desc = "撑杆跳高"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x09:
-                        desc = "平台跳水"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x0A:
-                        desc = f"单笔冲{'跌' if v2 < 0 else '涨'}"
-                        val = f"{v2 * 100:.2f}%"
-                    elif unusual_type == 0x0B:
-                        direction = "平" if v3 == 0 else "跌" if v3 < 0 else "涨"
-                        desc = f"区间放量{direction}"
-                        val = f"{v2:.1f}倍" + ("" if v3 == 0 else f"{v3 * 100:.2f}%")
-                    elif unusual_type == 0x0C:
-                        desc = "区间缩量"
-                        val = ""
-                    elif unusual_type == 0x10:
-                        desc = "大单托盘"
-                        val = f"{v4:.2f}/{v3:.2f}"
-                    elif unusual_type == 0x11:
-                        desc = "大单压盘"
-                        val = f"{v2:.2f}/{v3:.2f}"
-                    elif unusual_type == 0x12:
-                        desc = "大单锁盘"
-                        val = ""
-                    elif unusual_type == 0x13:
-                        desc = "竞价试买"
-                        val = f"{v2:.2f}/{v3:.2f}"
-                    elif unusual_type == 0x14:
-                        direction = "涨" if v1 == 0x00 else "跌"
-                        if len(data) >= 10:
-                            sub_type, v2_alt, v3_alt = struct.unpack_from("<Bff", data, 1)
-                        else:
-                            sub_type, v2_alt, v3_alt = 0, 0.0, 0.0
-                        if sub_type == 0x01:
-                            desc = f"逼近{direction}停"
-                        elif sub_type == 0x02:
-                            desc = f"封{direction}停板"
-                        elif sub_type == 0x04:
-                            desc = f"封{direction}大减"
-                        elif sub_type == 0x05:
-                            desc = f"打开{direction}停"
-                        else:
-                            desc = f"涨跌停({direction})"
-                        val = f"{v2_alt:.2f}/{v3_alt:.2f}"
-                    else:
-                        desc = f"异动类型{unusual_type:#04x}"
-                        val = ""
-                hour, minute_sec = struct.unpack_from("<BH", body, offset + 29)
-                results.append(
-                    Dot(index=index, market=market, code=code_raw.decode("gbk", errors="replace").rstrip("\x00"),
-                        name="", time=Time(hour, minute_sec // 100, minute_sec % 100), desc=desc, value=val,
-                        unusual_type=unusual_type))
-            binary_length = 2 + count * 32
-            text_bytes = body[binary_length:]
-            text_list = text_bytes.decode("gbk", errors="ignore").strip(",").split(",")
-            dfs.extend([dict(index=item.index, market=item.market, code=item.code,
-                             name=text_list[i] if i < len(text_list) else "", time=item.time, desc=item.desc,
-                             value=item.value, unusual_type=item.unusual_type) for i, item in enumerate(results)])
-            if len(results) < 600:
-                break
-        return pd.DataFrame(dfs)
+        return pd.DataFrame(results)
 
-    def get_server_info(self):
-        """获取服务器交易时段信息"""
-        pkg = self.build_mac_request(0x120F, bytes.fromhex("04002d31") + b"\x00" * 8 + b"\x00\x27\x06\x0e" + b"\x00" * 52)
-        body = self._execute(pkg)
-        if len(body) < 87:
-            return
-        pos = 0
-        _count = struct.unpack_from("<H", body, pos)[0]
-        pos += 2
-        pos += 8
-        pos += 3
-        pos += 9
-        def _parse_date(p: int) -> tuple[str, int]:
-            d = struct.unpack_from("<I", body, p)[0]
-            return f"{d // 10000}-{d % 10000 // 100:02d}-{d % 100:02d}", p + 4
-
-        def _parse_session(p: int) -> tuple[list[dict[str, object]], int]:
-            vals = struct.unpack_from("<8H", body, p)
-            sessions: list[dict[str, object]] = []
-            for i in range(0, 8, 2):
-                sessions.append({"open": f"{vals[i] // 60}:{vals[i] % 60:02d}", "close": f"{vals[i + 1] // 60}:{vals[i + 1] % 60:02d}", })
-            return sessions, p + 16
-        today, pos = _parse_date(pos)
-        pos += 4  # ts1
-        sessions_1, pos = _parse_session(pos)
-        sessions_2, pos = _parse_session(pos)
-        pos += 1  # flag byte
-        last_trading_day, pos = _parse_date(pos)
-        pos += 4  # ts2
-        market_param_1 = 0
-        market_param_2 = 0
-        if pos + 8 <= len(body):
-            market_param_1 = struct.unpack_from("<I", body, pos)[0]
-            pos += 4
-            market_param_2 = struct.unpack_from("<I", body, pos)[0]
-        return dict(today=today, last_trading_day=last_trading_day, sessions_1=sessions_1,
-                    sessions_2=sessions_2, market_param_1=market_param_1,
-                    market_param_2=market_param_2)
-
-    def get_kline_offset(self):
-        """获取 K 线数据偏移信息"""
-        pkg = self.build_mac_request(0x124A, struct.pack("<II5x", 0, 128000))
-        body = self._execute(pkg)
-        return dict(total=0, returned=0) if len(body) < 8 else dict(total=struct.unpack(">I", body[:4])[0], returned=struct.unpack("<I", body[4:8])[0])
-
-    def get_goods_list(self, market=ExMarket.HK_MAIN_BOARD):
+    def get_goods_list(self, market=0):
         """获取扩展市场（期货/期权等）商品列表。       """
         items = []
         for page in range(100):
             pkg = self.build_mac_request(0x2562, struct.pack("<HII", int(market), page * 1000, 1000))
             body = self._execute(pkg)
-            _RECORD_SIZE = 48
-            _RECORD_FMT = "<H23sHIBfffHH"
-            (total,) = struct.unpack_from("<H", body, 0)
+            total = struct.unpack_from("<H", body, 0)[0]
             for i in range(total):
-                offset = 2 + i * _RECORD_SIZE
-                category, raw_name, u, index, switch, v1, v2, v3, c1, c2 = struct.unpack_from(_RECORD_FMT, body, offset)
-                name = raw_name.decode("gbk", errors="replace").rstrip("\x00")
-                items.append(
-                    dict(name=name, category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1, c2=c2))
+                category, name, u, index, switch, v1, v2, v3, c1, c2 = struct.unpack_from("<H23sHIBfffHH", body, 2 + i * 48)
+                items.append(dict(name=name.decode("gbk", errors="replace").rstrip("\x00"), category=category, u=u, index=index, switch=switch, code=[v1, v2, v3], c1=c1, c2=c2))
             if total < 1000:
                 break
         return pd.DataFrame(items)
@@ -1048,7 +922,6 @@ class TdxClient(Client):
         pos += 2
         results = []
         for _ in range(num):
-            record_start = pos
             market_b, code_b, active1 = struct.unpack_from("<B6sH", body, pos)
             pos += 9
             price_raw, pos = get_price(body, pos)
@@ -1060,7 +933,7 @@ class TdxClient(Client):
             unknown_1, pos = get_price(body, pos)
             vol, pos = get_price(body, pos)
             cur_vol, pos = get_price(body, pos)
-            amount = _decode_volume(struct.unpack_from("<I", body, pos)[0])
+            money = _decode_vol(struct.unpack_from("<I", body, pos)[0])
             pos += 4
             s_vol, pos = get_price(body, pos)
             b_vol, pos = get_price(body, pos)
@@ -1106,7 +979,7 @@ class TdxClient(Client):
                                 open=(price_raw + open_diff) / 100.0,
                                 high=(price_raw + high_diff) / 100.0,
                                 low=(price_raw + low_diff) / 100.0, vol=float(vol),
-                                cur_vol=float(cur_vol), amount=amount, s_vol=float(s_vol),
+                                cur_vol=float(cur_vol), money=money, s_vol=float(s_vol),
                                 b_vol=float(b_vol), active1=active1, active2=active2,
                                 bid1=(price_raw + bid1_d) / 100.0, bid_vol1=float(bv1),
                                 bid2=(price_raw + bid2_d) / 100.0, bid_vol2=float(bv2),
@@ -1122,7 +995,7 @@ class TdxClient(Client):
                                 unknown_2=unknown_2, unknown_3=unknown_3, unknown_5=unknown_5,
                                 unknown_6=unknown_6, unknown_7=unknown_7, unknown_8=unknown_8,
                                 server_time=f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}",
-                                trading_status=trading_status, open_amount=unknown_3 * 100.0))
+                                trading_status=trading_status, open_money=unknown_3 * 100.0))
         return pd.DataFrame(results)
 
     def get_price_limits(self, market: Market, code: str, name: str, pre_close: float) -> tuple[float, float]:
@@ -1159,15 +1032,15 @@ class TdxClient(Client):
                 close_diff, pos = get_price(body, pos)
                 high_diff, pos = get_price(body, pos)
                 low_diff, pos = get_price(body, pos)
-                vol, pos = _decode_volume(struct.unpack_from("<I", body, pos)[0]), pos + 4
-                amount, pos = _decode_volume(struct.unpack_from("<I", body, pos)[0]), pos + 4
+                vol, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
+                money, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
                 open_abs = open_diff + pre_diff_base
                 close_abs = open_abs + close_diff
                 high_abs = open_abs + high_diff
                 low_abs = open_abs + low_diff
                 pre_diff_base = open_abs + close_diff
                 bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
-                                 low=low_abs / 1000.0, vol=vol, amount=amount, date=datetime(year=year, month=month,
+                                 low=low_abs / 1000.0, vol=vol, money=money, date=datetime(year=year, month=month,
                                                                                              day=day, hour=hour,
                                                                                              minute=minute)))
             if ret_count < 800:
@@ -1191,8 +1064,8 @@ class TdxClient(Client):
             close_diff, pos = get_price(body, pos)
             high_diff, pos = get_price(body, pos)
             low_diff, pos = get_price(body, pos)
-            vol, pos = _decode_volume(struct.unpack_from("<I", body, pos)[0]), pos + 4
-            amount, pos = _decode_volume(struct.unpack_from("<I", body, pos)[0]), pos + 4
+            vol, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
+            money, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
             pos += 4
             open_abs = open_diff + pre_diff_base
             close_abs = open_abs + close_diff
@@ -1200,7 +1073,7 @@ class TdxClient(Client):
             low_abs = open_abs + low_diff
             pre_diff_base = open_abs + close_diff
             bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
-                             low=low_abs / 1000.0, vol=vol, amount=amount, date=datetime(year=year, month=month, day=day, hour=hour, minute=minute)))
+                             low=low_abs / 1000.0, vol=vol, money=money, date=datetime(year=year, month=month, day=day, hour=hour, minute=minute)))
         return pd.DataFrame(bars)
 
     def get_history_minute_time_data(self, market=Market.SH, code='600600', date=0):
@@ -1315,10 +1188,10 @@ class TdxClient(Client):
             else:
                 # 股本变动类：4个 uint32，代表前后流通/总股本
                 ql_raw, qz_raw, hl_raw, hz_raw = struct.unpack("<IIII", chunk)
-                rec.panqian_liutong = _decode_volume(ql_raw)
-                rec.qian_zongguben = _decode_volume(qz_raw)
-                rec.panhou_liutong = _decode_volume(hl_raw)
-                rec.hou_zongguben = _decode_volume(hz_raw)
+                rec.panqian_liutong = _decode_vol(ql_raw)
+                rec.qian_zongguben = _decode_vol(qz_raw)
+                rec.panhou_liutong = _decode_vol(hl_raw)
+                rec.hou_zongguben = _decode_vol(hz_raw)
             records.append(dict(rec))
         return pd.DataFrame(records)
 
@@ -1414,8 +1287,8 @@ class TdxClient(Client):
         limit_down = int(quotes.iloc[2].open)
         limit_up = int(quotes.iloc[2].price)
         return dict(up_count=up, down_count=down, neutral_count=neutral,
-                    suspended_count=max(0, total - up - down - neutral), total_count=total, total_amount=q.amount,
-                    total_volume=q.vol, total_market_cap=market_cap, limit_up_count=limit_up,
+                    suspended_count=max(0, total - up - down - neutral), total_count=total, total_money=q.money,
+                    total_vol=q.vol, total_market_cap=market_cap, limit_up_count=limit_up,
                     limit_down_count=limit_down)
 
     def get_fund_flow(self, market=Market.SH, code='600600'):
@@ -1424,18 +1297,18 @@ class TdxClient(Client):
         stats = {"super_in": 0.0, "large_in": 0.0, "medium_in": 0.0, "small_in": 0.0, "super_out": 0.0,
                  "large_out": 0.0, "medium_out": 0.0, "small_out": 0.0}
         for record in records:
-            amount = record.price * record.vol * 100.0
+            money = record.price * record.vol * 100.0
             direction = "in" if record.buyorsell == 1 else "out" if record.buyorsell == -1 else None
             if not direction:
                 continue
-            if amount > 1_000_000:
-                stats[f"super_{direction}"] += amount
-            elif amount > 200_000:
-                stats[f"large_{direction}"] += amount
-            elif amount > 40_000:
-                stats[f"medium_{direction}"] += amount
+            if money > 1_000_000:
+                stats[f"super_{direction}"] += money
+            elif money > 200_000:
+                stats[f"large_{direction}"] += money
+            elif money > 40_000:
+                stats[f"medium_{direction}"] += money
             else:
-                stats[f"small_{direction}"] += amount
+                stats[f"small_{direction}"] += money
         return (stats)
 
     def get_history_fund_flow(self, market=Market.SH, code='600600'):
@@ -1448,18 +1321,18 @@ class TdxClient(Client):
             stats = {"super_in": 0.0, "large_in": 0.0, "medium_in": 0.0, "small_in": 0.0, "super_out": 0.0,
                      "large_out": 0.0, "medium_out": 0.0, "small_out": 0.0}
             for record in records:
-                amount = record.price * record.vol * 100.0
+                money = record.price * record.vol * 100.0
                 direction = "in" if record.buyorsell == 1 else "out" if record.buyorsell == -1 else None
                 if not direction:
                     continue
-                if amount > 1_000_000:
-                    stats[f"super_{direction}"] += amount
-                elif amount > 200_000:
-                    stats[f"large_{direction}"] += amount
-                elif amount > 40_000:
-                    stats[f"medium_{direction}"] += amount
+                if money > 1_000_000:
+                    stats[f"super_{direction}"] += money
+                elif money > 200_000:
+                    stats[f"large_{direction}"] += money
+                elif money > 40_000:
+                    stats[f"medium_{direction}"] += money
                 else:
-                    stats[f"small_{direction}"] += amount
+                    stats[f"small_{direction}"] += money
             flow = Dot(stats)
             res = dict(date=datetime(year=date // 10000, month=(date // 100) % 100, day=date % 100),
                        super_in=flow.super_in,
@@ -1633,11 +1506,11 @@ class ExTdxClient(Client):
                     if pos + 28 > len(body):
                         break
                     (open_p, high, low, close_p, position, trade, _price) = struct.unpack("<ffffIIf", body[pos: pos + 28])
-                    (amount,) = struct.unpack("<f", body[pos + 16: pos + 20])
+                    (money,) = struct.unpack("<f", body[pos + 16: pos + 20])
                     pos += 28
                     results.append(
                         dict(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade,
-                             amount=amount, year=year, month=month, day=day, hour=hour, minute=minute))
+                             money=money, year=year, month=month, day=day, hour=hour, minute=minute))
                 if ret_count < 700:
                     break
         return pd.DataFrame(results)
@@ -1670,7 +1543,7 @@ class ExTdxClient(Client):
                 day = (d1 % 2048) % 100
                 hour, minute = d2 // 60, d2 % 60
                 results.append(dict(open=open_p, high=high, low=low, close=close_p, position=position, trade=trade,
-                                    amount=settlement, year=year, month=month, day=day, hour=hour, minute=minute))
+                                    money=settlement, year=year, month=month, day=day, hour=hour, minute=minute))
             return pd.DataFrame(results)
 
     def get_minute_time_data(self, market: int, code: str) -> list:
@@ -1686,13 +1559,13 @@ class ExTdxClient(Client):
             for _ in range(num):
                 if pos + 18 > len(body):
                     break
-                (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos: pos + 18])
+                (raw_time, price, avg_price, vol, money) = struct.unpack("<HffII", body[pos: pos + 18])
                 pos += 18
                 hour = raw_time // 60
                 minute = raw_time % 60
                 results.append(
-                    dict(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume,
-                         open_interest=amount))
+                    dict(hour=hour, minute=minute, price=price, avg_price=avg_price, vol=vol,
+                         open_interest=money))
         return results
 
     def get_history_minute_time_data(self, market: int, code: str, date: int) -> list:
@@ -1707,12 +1580,12 @@ class ExTdxClient(Client):
             for _ in range(num):
                 if pos + 18 > len(body):
                     break
-                (raw_time, price, avg_price, volume, amount) = struct.unpack("<HffII", body[pos: pos + 18])
+                (raw_time, price, avg_price, vol, money) = struct.unpack("<HffII", body[pos: pos + 18])
                 pos += 18
                 hour = raw_time // 60
                 minute = raw_time % 60
-                results.append(dict(hour=hour, minute=minute, price=price, avg_price=avg_price, volume=volume,
-                                    open_interest=amount))
+                results.append(dict(hour=hour, minute=minute, price=price, avg_price=avg_price, vol=vol,
+                                    open_interest=money))
         return results
 
     def get_transaction_data(self, market: int, code: str) -> list:
@@ -1729,7 +1602,7 @@ class ExTdxClient(Client):
             for _ in range(num):
                 if pos + 16 > len(body):
                     break
-                (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
+                (raw_time, price, vol, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
                 pos += 16
                 hour = raw_time // 60
                 minute = raw_time % 60
@@ -1738,7 +1611,7 @@ class ExTdxClient(Client):
                     second = 0
                 nature = direction // 10000
                 results.append(
-                    dict(hour=hour, minute=minute, second=second, price=price, volume=volume,
+                    dict(hour=hour, minute=minute, second=second, price=price, vol=vol,
                          zengcang=zengcang, nature=nature))
             if num < 1800:
                 break
@@ -1759,7 +1632,7 @@ class ExTdxClient(Client):
             for _ in range(num):
                 if pos + 16 > len(body):
                     break
-                (raw_time, price, volume, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
+                (raw_time, price, vol, zengcang, direction) = struct.unpack("<HIIiH", body[pos: pos + 16])
                 pos += 16
                 hour = raw_time // 60
                 minute = raw_time % 60
@@ -1768,7 +1641,7 @@ class ExTdxClient(Client):
                     second = 0
                 nature = direction // 10000
                 results.append(
-                    dict(hour=hour, minute=minute, second=second, price=price, volume=volume,
+                    dict(hour=hour, minute=minute, second=second, price=price, vol=vol,
                          zengcang=zengcang, nature=nature))
             if num < 1800:
                 break
@@ -1857,7 +1730,7 @@ class MacExClient(Client):
                 offset = 33 + i * 36
                 if offset + 36 > len(body):
                     break
-                (ymd, time_num, open_, high, low, close, amount, vol, float_shares) = struct.unpack_from("<II7f", body, offset)
+                (ymd, time_num, open_, high, low, close, money, vol, float_shares) = struct.unpack_from("<II7f", body, offset)
                 if ymd < 19900101 or ymd > 20991231:
                     continue
                 year = ymd // 10000
@@ -1865,7 +1738,7 @@ class MacExClient(Client):
                 day = ymd % 100
                 dt = datetime(year, month, day, time_num // 3600, (time_num % 3600) // 60)
                 results.append(
-                    dict(datetime=dt, open=open_, high=high, low=low, close=close, vol=vol, amount=amount,
+                    dict(datetime=dt, open=open_, high=high, low=low, close=close, vol=vol, money=money,
                          float_shares=float_shares))
             if count < 700:
                 break
@@ -1886,12 +1759,12 @@ class MacExClient(Client):
         # 尾部元数据
         tail_offset = 35 + count * 18
         (name_raw, _decimal, _category, _vol_unit, _date_raw, _time_raw, pre_close, open, high, low, close,
-         _momentum_tail, vol, amount, _tail_pad2, turnover, avg_tail, _industry) = struct.unpack_from(
+         _momentum_tail, vol, money, _tail_pad2, turnover, avg_tail, _industry) = struct.unpack_from(
             "<44sBHf5x2I5ffIf12s2fI", body, tail_offset)
         return Dot(market=market, code=code_raw.decode("gbk", errors="ignore").replace("\x00", ""),
                    name=name_raw.decode("gbk", errors="ignore").replace("\x00", ""),
                    pre_close=pre_close, open=open, high=high, low=low, close=close, vol=int(vol),
-                   amount=amount, turnover=turnover, avg=avg_tail, charts=ticks)
+                   money=money, turnover=turnover, avg=avg_tail, charts=ticks)
 
     def goods_chart_sampling(self, market: int, code: str):
         """获取分时缩略采样价格点（约 240 个点） """
@@ -1918,10 +1791,10 @@ class MacExClient(Client):
             count = struct.unpack_from("<H", body, 29)[0]
             for i in range(count):
                 offset = 39 + i * 18
-                (time_sec, price, volume, trade_count, bs_flag) = struct.unpack_from("<IfIIH", body, offset)
+                (time_sec, price, vol, trade_count, bs_flag) = struct.unpack_from("<IfIIH", body, offset)
                 sig = 1 if bs_flag == 0 else -1 if bs_flag == 1 else 0 if bs_flag == 2 else 2
                 results.append(dict(time=Time(time_sec // 3600, time_sec % 3600 // 60, time_sec % 60), price=price,
-                                    vol=volume, trade_count=trade_count, sig=sig))
+                                    vol=vol, trade_count=trade_count, sig=sig))
             if count < 2000:
                 break
         return pd.DataFrame(results)
@@ -1929,5 +1802,5 @@ class MacExClient(Client):
 
 if __name__ == '__main__':
     with MacClient() as c:
-        df = c.get_symbol_info('600600')
+        df = c.get_goods_list()
         print('over')
