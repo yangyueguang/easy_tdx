@@ -734,7 +734,7 @@ class MacClient(Client):
         """获取K线数据"""
         results = []
         for page in range(100):
-            pkg = self.build_mac_request(0x122E, struct.pack("<H22sHH I HH bbb bH4s", get_market(code), code.encode("gbk"), int(period), 1, page * 700, 700, int(adjust), 1, 1, 0, 1, 0, b""))
+            pkg = self.build_mac_request(0x122E, struct.pack("<H22sHH I HH bbb bH4s", get_market(code), code.strip('i').encode("gbk"), int(period), 1, page * 700, 700, int(adjust), 1, 1, 0, 1, 0, b""))
             body = self._execute(pkg)
             (category_flag, _flag, count, start) = struct.unpack_from("<HBHI", body, 24)
             count = min(count, (len(body) - 33) // 36)
@@ -746,14 +746,15 @@ class MacClient(Client):
                 if ymd < 19900101 or ymd > 20991231:
                     continue
                 dt = datetime(ymd // 10000, (ymd % 10000) // 100, ymd % 100, time_num // 3600, (time_num % 3600) // 60)
-                results.append(dict(date=dt, open=open_, high=high, low=low, close=close, vol=vol, money=money, turnover=round(vol / abs(float_shares) / 100, 2)))
+                up, down = struct.unpack_from('<HH', body[offset+32:]) if code.startswith(('i', '39', '88')) else (0, 0)
+                results.append(dict(date=dt, open=open_, high=high, low=low, close=close, up=up, down=down, vol=vol, money=money, turnover=1 if abs(float_shares) < 1 else round(vol / abs(float_shares) / 100, 2)))
             if count < 700:
                 break
         return pd.DataFrame(results).sort_values('date')
 
     def minutes(self, code='600600', date=20260629):
         """获取单日分时图"""
-        pkg = self.build_mac_request(0x122D, struct.pack("<H22sI5H", get_market(code), code.encode("gbk"), date, 1, 0, 0, 0, 0))
+        pkg = self.build_mac_request(0x122D, struct.pack("<H22sI5H", get_market(code), code.strip('i').encode("gbk"), date, 1, 0, 0, 0, 0))
         body = self._execute(pkg)
         (market, code_raw, query_date, reserved, ref_price, count) = struct.unpack_from("<H22sIBfH", body, 0)
         ticks = []
@@ -779,7 +780,7 @@ class MacClient(Client):
                 results.append(dict(time=Time(t // 3600, t % 3600 // 60, t % 60), price=price, vol=vol, trade=trade_count, sig=1 if f == 0 else -1 if f == 1 else 0 if f == 2 else 2))
             if count < 1000:
                 break
-        return pd.DataFrame(results)
+        return pd.DataFrame(results or {'time': [], 'price': [], 'vol': [], 'trade': [], 'sig': []})
 
     def now(self, code='600600'):
         """获取个股简要特征快照"""
@@ -911,318 +912,17 @@ class MacClient(Client):
                 break
         return pd.DataFrame(items)
 
-    def get_security_bars(self, code='600600', category=Period.DAILY):
-        """获取 K 线数据"""
-        bars = []
-        for page in range(30):
-            pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, get_market(code),
-                              code.encode("utf-8"), int(category), 1, page * 800, 800, 0, 0, 0)
-            body = self._execute(pkg)
-            ret_count = struct.unpack_from("<H", body, 0)[0]
-            pos = 2
-            pre_diff_base = 0
-            cat = int(category)
-            for _ in range(ret_count):
-                year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
-                open_diff, pos = get_price(body, pos)
-                close_diff, pos = get_price(body, pos)
-                high_diff, pos = get_price(body, pos)
-                low_diff, pos = get_price(body, pos)
-                vol, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
-                money, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
-                open_abs = open_diff + pre_diff_base
-                close_abs = open_abs + close_diff
-                high_abs = open_abs + high_diff
-                low_abs = open_abs + low_diff
-                pre_diff_base = open_abs + close_diff
-                bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
-                                 low=low_abs / 1000.0, vol=vol, money=money, date=datetime(year=year, month=month,
-                                                                                             day=day, hour=hour,
-                                                                                             minute=minute)))
-            if ret_count < 800:
-                break
-        return pd.DataFrame(bars)
-
-    def get_index_bars(self, market=Market.SH, code='000001', category=Period.DAILY, start=0,
-                       count: int = 800):
-        """获取指数 K 线数据。"""
-        pkg = struct.pack("<HIHHHH6sHHHHIIH", 0x010C, 0x01016408, 0x001C, 0x001C, 0x052D, int(market),
-                          code.encode('utf8'), int(category), 1, start, count, 0, 0, 0)
-        body = self._execute(pkg)
-        ret_count = struct.unpack_from("<H", body, 0)[0]
-        pos = 2
-        bars = []
-        pre_diff_base = 0
-        cat = int(category)
-        for _ in range(ret_count):
-            year, month, day, hour, minute, pos = get_datetime(cat, body, pos)
-            open_diff, pos = get_price(body, pos)
-            close_diff, pos = get_price(body, pos)
-            high_diff, pos = get_price(body, pos)
-            low_diff, pos = get_price(body, pos)
-            vol, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
-            money, pos = _decode_vol(struct.unpack_from("<I", body, pos)[0]), pos + 4
-            pos += 4
-            open_abs = open_diff + pre_diff_base
-            close_abs = open_abs + close_diff
-            high_abs = open_abs + high_diff
-            low_abs = open_abs + low_diff
-            pre_diff_base = open_abs + close_diff
-            bars.append(dict(open=open_abs / 1000.0, close=close_abs / 1000.0, high=high_abs / 1000.0,
-                             low=low_abs / 1000.0, vol=vol, money=money, date=datetime(year=year, month=month, day=day, hour=hour, minute=minute)))
-        return pd.DataFrame(bars)
-
-    def get_history_minute_time_data(self, market=Market.SH, code='600600', date=0):
-        """获取历史某日分时数据（date: YYYYMMDD）0代表今天 """
-        date = date or int(datetime.now().strftime("%Y%m%d"))
-        pkg = bytes.fromhex("0c013000010 10d000d00b40f".replace(" ", "")) + struct.pack("<IB6s", date, int(market), code.encode("utf-8"))
-        body = self._execute(pkg)
-        num = struct.unpack_from("<H", body, 0)[0]
-        pos = 6  # 今日分时 skip=4，历史分时 skip=6
-        last_price = 0
-        bars = []
-        for _ in range(num):
-            price_diff, pos = get_price(body, pos)
-            unknown_1, pos = get_price(body, pos)
-            vol, pos = get_price(body, pos)
-            last_price += price_diff
-            bars.append(dict(price=last_price / 100.0, vol=vol, _unknown_1=unknown_1))
-        df = pd.DataFrame(bars)
-        base = pd.Timestamp(year=date // 10000, month=(date // 100) % 100, day=date % 100)
-        offsets = pd.to_timedelta(
-            (list(range(9 * 60 + 30, 9 * 60 + 30 + 120)) + list(range(13 * 60, 13 * 60 + 120)))[:len(df)], unit="m")
-        df["date"] = base + offsets
-        return df
-
-    def get_transaction_data(self, market=Market.SH, code='600600'):
-        """获取当日逐笔成交（分页）。"""
-        res = []
-        for page in range(10):
-            pkg = bytes.fromhex("0c170801010 10e000e00c50f".replace(" ", "")) + struct.pack("<H6sHH", int(market), code.encode("utf-8"), page * 800, 800)
-            body = self._execute(pkg)
-            num = struct.unpack_from("<H", body, 0)[0]
-            pos = 2
-            last_price = 0
-            for _ in range(num):
-                tminutes = struct.unpack_from("<H", body, pos)[0]
-                hour, minute, pos = tminutes // 60, tminutes % 60, pos + 2
-                price_diff, pos = get_price(body, pos)
-                vol, pos = get_price(body, pos)
-                _num_orders, pos = get_price(body, pos)  # 成交笔数（当日独有）
-                buyorsell, pos = get_price(body, pos)
-                unknown_last, pos = get_price(body, pos)  # Bug #4 修复：不再丢弃
-                last_price += price_diff
-                res.append(dict(hour=hour, minute=minute, price=last_price / 100.0, vol=vol,
-                                buyorsell=1 if buyorsell == 0 else -1 if buyorsell == 1 else 0 if buyorsell == 2 else 2,
-                                unknown_last=unknown_last))
-            if num < 800:
-                break
-        return res
-
-    def get_history_transaction_data(self, market=Market.SH, code='600600', date=20260629):
-        """获取历史逐笔成交（date: YYYYMMDD，分页）。"""
-        records = []
-        for page in range(100):
-            pkg = bytes.fromhex("0c013001000112001200b50f".replace(" ", "")) + struct.pack("<IH6sHH", date, int(market), code.encode("utf-8"), page * 800, 800)
-            body = self._execute(pkg)
-            num = struct.unpack_from("<H", body, 0)[0]
-            pos = 6
-            last_price = 0
-            for _ in range(num):
-                tminutes = struct.unpack_from("<H", body, pos)[0]
-                hour, minute, pos = tminutes // 60, tminutes % 60, pos + 2
-                price_diff, pos = get_price(body, pos)
-                vol, pos = get_price(body, pos)
-                buyorsell, pos = get_price(body, pos)  # 历史无 num_orders
-                unknown_last, pos = get_price(body, pos)
-                last_price += price_diff
-                records.append(dict(hour=hour, minute=minute, price=last_price / 100.0, vol=vol,
-                                    buyorsell=1 if buyorsell == 0 else -1 if buyorsell == 1 else 0 if buyorsell == 2 else 2,
-                                    unknown_last=unknown_last))
-            if num < 800:
-                break
-        return records
-
-    def get_xdxr_info(self, market=Market.SH, code='600600'):
-        """获取除权除息历史记录。"""
-        pkg = bytes.fromhex("0c1f18760001 0b000b000f000100".replace(" ", "")) + struct.pack("<B6s", int(market), code.encode("utf-8"))
-        body = self._execute(pkg)
-        XDXR_CATEGORY_NAMES: dict[int, str] = {
-            1: "除权除息", 2: "送配股上市", 3: "非流通股上市", 4: "未知股本变动", 5: "股本变化", 6: "增发新股",
-            7: "股份回购", 8: "增发新股上市", 9: "转配股上市", 10: "可转债上市", 11: "扩缩股",
-            12: "非流通股缩股",
-            13: "送认购权证", 14: "送认沽权证", }
-        pos = 9  # 跳过9字节（market+code+未知）
-        num = struct.unpack_from("<H", body, pos)[0]
-        pos += 2
-        records = []
-        for _ in range(num):
-            market_b, code_b = struct.unpack_from("<B6s", body, pos)
-            pos += 7
-            bytes(body[pos: pos + 1])
-            pos += 1  # 跳过1个未知字节
-            year, month, day, _hour, _min, pos = get_datetime(9, body, pos)
-            category = struct.unpack_from("<B", body, pos)[0]
-            pos += 1
-            chunk = bytes(body[pos: pos + 16])
-            pos += 16
-            rec = Dot(code=code_b.decode("utf-8").rstrip("\x00"), date=datetime(year=year, month=month, day=day), category=category,
-                      name=XDXR_CATEGORY_NAMES.get(category, str(category)))
-            if category == 1:
-                fenhong, peigujia, songzhuangu, peigu = struct.unpack("<ffff", chunk)
-                rec.fenhong = fenhong / 10.0
-                rec.peigujia = peigujia
-                rec.songzhuangu = songzhuangu / 10.0
-                rec.peigu = peigu / 10.0
-            elif category in (11, 12):
-                _, _, suogu, _ = struct.unpack("<IIfI", chunk)
-                rec.suogu = suogu
-            elif category in (13, 14):
-                xingquanjia, _, fenshu, _ = struct.unpack("<fIfI", chunk)
-                rec.xingquanjia = xingquanjia
-                rec.fenshu = fenshu
-            else:
-                # 股本变动类：4个 uint32，代表前后流通/总股本
-                ql_raw, qz_raw, hl_raw, hz_raw = struct.unpack("<IIII", chunk)
-                rec.panqian_liutong = _decode_vol(ql_raw)
-                rec.qian_zongguben = _decode_vol(qz_raw)
-                rec.panhou_liutong = _decode_vol(hl_raw)
-                rec.hou_zongguben = _decode_vol(hz_raw)
-            records.append(dict(rec))
-        return pd.DataFrame(records)
-
-    def get_finance_info(self, market=Market.SH, code='600600'):
-        """获取最新财务数据。"""
-        pkg = bytes.fromhex("0c1f18760001 0b000b001000 0100".replace(" ", "")) + struct.pack("<B6s", int(market), code.encode("utf-8"))
-        body = self._execute(pkg)
-        fmt = "<fHHII" + "f" * 30
-        keys = ['流通股本', '省份', '行业', '更新日期', '上市日期', '总股本', '国家股', '发起人法人股', '法人股', 'B股',
-                'H股', '职工股', '总资产', '流动资产', '固定资产', '无形资产', '股东人数', '流动负债', '长期负债',
-                '资本公积金', '净资产', '主营收入',
-                '主营利润', '应收账款', '营业利润', '投资收益', '经营现金流', '总现金流', '存货', '利润总额',
-                '税后利润', '净利润', '未分配利润', '每股净资产', '保留']
-        return dict(zip(keys, struct.unpack(fmt, bytes(body[9: 9 + struct.calcsize(fmt)]))))
-
-    def get_company_info_category(self, market=Market.SH, code='600600'):
-        """获取公司信息文件目录。"""
-        pkg = bytes.fromhex("0c0f109b00010e000e00cf02".replace(" ", "")) + struct.pack("<H6sI", int(market), code.encode('utf8'), 0)
-        body = self._execute(pkg)
-        num = struct.unpack_from("<H", body, 0)[0]
-        pos = 2
-        results = []
-        _RECORD_SIZE = 152
-        for _ in range(num):
-            raw = bytes(body[pos: pos + _RECORD_SIZE])
-            name_b, filename_b, start, length = struct.unpack("<64s80sII", raw)
-            pos += _RECORD_SIZE
-            nul = name_b.find(b"\x00")
-            results.append(dict(name=(name_b[:nul] if nul != -1 else name_b).decode("gbk", errors="replace"),
-                                filename=f'{code}.txt', start=start, length=length))
-        return pd.DataFrame(results)
-
-    def get_company_info_content(self, market=Market.SH, code='600600') -> str:
-        """读取公司信息文本。"""
-        pkg = bytes.fromhex("0c07109c0001680068 00d002".replace(" ", "")) + struct.pack("<H6sH80sIII", int(market), code.encode("utf-8"), 0, (f'{code}.txt'.encode("gbk") + b"\x00" * 80)[:80], 0, 100000, 0)
-        body = self._execute(pkg)
-        _, length = struct.unpack_from("<10sH", body, 0)
-        content = bytes(body[12: 12 + length])
-        return content.decode("gbk", errors="replace")
-
-    def get_block_info(self):
-        """获取并解析板块文件（行业、概念、风格等   """
-        results = []
-        for name in ['zs', 'gn', 'fg']:
-            name = f'block_{name}.dat'
-            body = self._execute(bytes.fromhex("0c39186900012a002a00c502") + (name.encode("ascii") + b"\x00" * 40)[:40])
-            size, _, hash_b, _ = struct.unpack("<I1s32s1s", body[:38])
-            full_data = bytearray()
-            pos = 0
-            chunk_size = 30000
-            while pos < size:
-                pkg = bytes.fromhex("0c37186a00016e006e00b906") + struct.pack("<II", pos, chunk_size) + (name.encode(
-                    "ascii") + b"\x00" * 100)[:100]
-                body = self._execute(pkg)
-                if len(body) < 4:
-                    break
-                full_data.extend(body[4:])
-                pos += len(body[4:])
-            data = bytes(full_data)
-            if len(data) < 386:
-                continue
-            pos = 384
-            count = struct.unpack("<H", data[pos: pos + 2])[0]
-            pos += 2
-            for _ in range(count):
-                if len(data) < pos + 2813:
-                    break
-                name_b = data[pos: pos + 9]
-                stock_count, _type = struct.unpack("<HH", data[pos + 9: pos + 13])
-                name = name_b.decode("gbk", errors="replace").strip("\x00")
-                codes: list[str] = []
-                codes_start = pos + 13
-                actual_count = min(stock_count, 400)
-                for i in range(actual_count):
-                    c_start = codes_start + i * 7
-                    c_raw = data[c_start: c_start + 7]
-                    code = c_raw.decode("ascii", errors="replace").strip("\x00")
-                    if code:
-                        codes.append(code)
-                results.append(dict(name=name, count=stock_count, codes=codes))
-                pos += 2813
-        return pd.DataFrame(results)
-
-
-    def get_fund_flow(self, market=Market.SH, code='600600'):
-        """获取个股当日资金流向分布（基于 L1 逐笔数据统计）。"""
-        records = self.get_transaction_data(market, code)
-        stats = {"super_in": 0.0, "large_in": 0.0, "medium_in": 0.0, "small_in": 0.0, "super_out": 0.0,
-                 "large_out": 0.0, "medium_out": 0.0, "small_out": 0.0}
-        for record in records:
-            money = record.price * record.vol * 100.0
-            direction = "in" if record.buyorsell == 1 else "out" if record.buyorsell == -1 else None
-            if not direction:
-                continue
-            if money > 1_000_000:
-                stats[f"super_{direction}"] += money
-            elif money > 200_000:
-                stats[f"large_{direction}"] += money
-            elif money > 40_000:
-                stats[f"medium_{direction}"] += money
-            else:
-                stats[f"small_{direction}"] += money
-        return (stats)
-
-    def get_history_fund_flow(self, market=Market.SH, code='600600'):
-        """获取个股历史日线资金流向序列 """
-        bars = self.get_security_bars(market, code, Period.DAILY)
-        results = []
-        for i, bar in bars.T.items():
-            date = bar.year * 10000 + bar.month * 100 + bar.day
-            records = self.get_history_transaction_data(market, code, date)
-            stats = {"super_in": 0.0, "large_in": 0.0, "medium_in": 0.0, "small_in": 0.0, "super_out": 0.0,
-                     "large_out": 0.0, "medium_out": 0.0, "small_out": 0.0}
-            for record in records:
-                money = record.price * record.vol * 100.0
-                direction = "in" if record.buyorsell == 1 else "out" if record.buyorsell == -1 else None
-                if not direction:
-                    continue
-                if money > 1_000_000:
-                    stats[f"super_{direction}"] += money
-                elif money > 200_000:
-                    stats[f"large_{direction}"] += money
-                elif money > 40_000:
-                    stats[f"medium_{direction}"] += money
-                else:
-                    stats[f"small_{direction}"] += money
-            flow = Dot(stats)
-            res = dict(date=datetime(year=date // 10000, month=(date // 100) % 100, day=date % 100),
-                       super_in=flow.super_in,
-                       super_out=flow.super_out, large_in=flow.large_in, large_out=flow.large_out,
-                       medium_in=flow.medium_in, medium_out=flow.medium_out, small_in=flow.small_in,
-                       small_out=flow.small_out)
-
-            results.append(res)
-        return pd.DataFrame(results)
+    def history_flow(self, code='600601'):
+        """个股历史资金流向"""
+        def fund(date):
+            i = int(date.strftime('%Y%m%d'))
+            df = self.transactions(code, i) if i > 20100101 else pd.DataFrame({'price': [], 'vol': []})
+            df['v'] = df.price * df.vol * df.sig.replace(2, 0)
+            df['ab'] = df.v.abs()
+            df['tp'] = df.apply(lambda x: 'super' if x.ab >= 10000 or x.vol >= 5000 else 'big' if x.ab >= 2000 or x.vol >= 1000 else 'mid' if x.ab >= 400 or x.vol >= 200 else 'small', axis=1)
+            return df.groupby('tp').v.sum().reindex(['super', 'big', 'mid', 'small'], fill_value=0)
+        bars = self.kline(code, Period.DAILY, True)
+        return bars.date.apply(fund)
 
 
 class ExTdxClient(Client):
@@ -1682,8 +1382,6 @@ class MacExClient(Client):
 
 
 if __name__ == '__main__':
-    with MacClient() as c:
-        df = c.get_security_bars()
-        s = c.nows(["880005", "880001", "880006"])
-        print(len(df))
+    with ExTdxClient() as c:
+        d = c.get_markets()
         print('over')
